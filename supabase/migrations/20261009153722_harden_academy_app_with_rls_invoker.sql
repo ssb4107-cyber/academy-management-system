@@ -11,7 +11,7 @@ to authenticated
 using (
   active = true
   and role in ('SUPER_ADMIN', 'MANAGER')
-  and email = lower(btrim(coalesce(auth.jwt()->>'email', '')))
+  and email = lower(btrim(coalesce((select auth.jwt())->>'email', '')))
 );
 
 drop policy if exists academy_student_scope_read on academy_app.students;
@@ -25,7 +25,7 @@ using (
     from academy_app.user_access u
     where u.active = true
       and u.role in ('SUPER_ADMIN', 'MANAGER')
-      and u.email = lower(btrim(coalesce(auth.jwt()->>'email', '')))
+      and u.email = lower(btrim(coalesce((select auth.jwt())->>'email', '')))
       and (
         u.student_scope = 'ALL_STUDENTS'
         or (u.student_scope = 'LINKED_TEACHER' and students.teacher_id = u.teacher_id)

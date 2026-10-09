@@ -18,6 +18,14 @@ const state = {
   total: 0,
   query: "",
   status: "",
+  paymentMonths: [],
+  paymentMonth: "",
+  paymentQuery: "",
+  paymentMethod: "",
+  paymentRows: [],
+  paymentTotal: 0,
+  paymentAmount: 0,
+  paymentReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -140,6 +148,16 @@ function renderApp(sessionData) {
   page.append(makeHeader());
 
   const main = element("main", "content");
+  const viewSwitcher = element("nav", "view-switcher");
+  viewSwitcher.setAttribute("aria-label", "업무 화면 선택");
+  const studentTab = element("button", "view-tab active", "학생 조회");
+  const paymentTab = element("button", "view-tab", "수납 조회");
+  studentTab.type = "button";
+  paymentTab.type = "button";
+  viewSwitcher.append(studentTab, paymentTab);
+  main.append(viewSwitcher);
+
+  const studentView = element("div", "view-section");
   const heading = element("section", "page-heading");
   const title = element("div");
   title.append(element("p", "eyebrow", "STUDENT DIRECTORY"));
@@ -148,7 +166,7 @@ function renderApp(sessionData) {
   const sync = element("div", "sync-badge");
   sync.append(icon("●", "sync-dot"), element("span", "", sessionData.syncedAt ? "Supabase 동기화 완료" : "동기화 확인 중"));
   heading.append(title, sync);
-  main.append(heading);
+  studentView.append(heading);
 
   const stats = element("section", "stats-grid");
   stats.append(
@@ -157,7 +175,7 @@ function renderApp(sessionData) {
     createStat("학생 접근 범위", state.profile.studentScope === "ALL_STUDENTS" ? "전체 학생" : "담당 학생")
   );
   stats.id = "stats";
-  main.append(stats);
+  studentView.append(stats);
 
   const panel = element("section", "student-panel");
   const toolbar = element("div", "toolbar");
@@ -196,7 +214,11 @@ function renderApp(sessionData) {
   empty.id = "empty-state";
   empty.append(icon("⌕", "empty-icon"), element("strong", "", "조건에 맞는 학생이 없습니다."), element("span", "", "검색어나 상태 조건을 바꿔보세요."));
   panel.append(empty);
-  main.append(panel);
+  studentView.append(panel);
+
+  const paymentView = createPaymentView();
+  paymentView.hidden = true;
+  main.append(studentView, paymentView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -218,6 +240,194 @@ function renderApp(sessionData) {
     state.status = status.value;
     await loadStudents();
   });
+
+  studentTab.addEventListener("click", () => {
+    studentView.hidden = false;
+    paymentView.hidden = true;
+    studentTab.classList.add("active");
+    paymentTab.classList.remove("active");
+    showNotice("");
+  });
+  paymentTab.addEventListener("click", async () => {
+    studentView.hidden = true;
+    paymentView.hidden = false;
+    paymentTab.classList.add("active");
+    studentTab.classList.remove("active");
+    showNotice("");
+    if (!state.paymentReady) {
+      const ready = await loadPaymentOverview();
+      if (ready) await loadPayments();
+    }
+  });
+}
+
+function createPaymentView() {
+  const view = element("div", "view-section");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow", "PAYMENT LEDGER"));
+  title.append(element("h1", "page-title", "월별 수납 조회"));
+  title.append(element("p", "page-copy", "귀속월별 수납 내역과 학생별 납부 기록을 확인할 수 있습니다."));
+  const secure = element("div", "sync-badge");
+  secure.append(icon("●", "sync-dot"), element("span", "", "권한 범위 적용"));
+  heading.append(title, secure);
+  view.append(heading);
+
+  const stats = element("section", "stats-grid");
+  const amountCard = createStat("선택 월 수납액", "-", true);
+  amountCard.querySelector(".stat-value").id = "payment-total-amount";
+  const countCard = createStat("선택 월 수납 건수", "-");
+  countCard.querySelector(".stat-value").id = "payment-total-count";
+  const monthCard = createStat("조회 귀속월", "-");
+  monthCard.querySelector(".stat-value").id = "payment-selected-month";
+  stats.append(amountCard, countCard, monthCard);
+  view.append(stats);
+
+  const panel = element("section", "student-panel");
+  const toolbar = element("div", "toolbar payment-toolbar");
+  const searchWrap = element("label", "search-wrap");
+  searchWrap.append(icon("⌕", "search-icon"));
+  const search = element("input", "search-input");
+  search.type = "search";
+  search.placeholder = "학생명 또는 학년 검색";
+  search.value = state.paymentQuery;
+  search.setAttribute("aria-label", "수납 학생명 또는 학년 검색");
+  searchWrap.append(search);
+
+  const month = element("select", "status-select payment-month-select");
+  month.id = "payment-month";
+  month.disabled = true;
+  month.setAttribute("aria-label", "수납 귀속월 선택");
+  month.append(element("option", "", "월 불러오는 중"));
+
+  const method = element("select", "status-select");
+  method.id = "payment-method";
+  method.setAttribute("aria-label", "납부 방식 필터");
+  ["", "카드", "현금영수증", "동백전", "동백전QR", "토스", "모락"].forEach((value) => {
+    const option = element("option", "", value || "전체 방식");
+    option.value = value;
+    option.selected = value === state.paymentMethod;
+    method.append(option);
+  });
+  toolbar.append(searchWrap, month, method);
+  panel.append(toolbar);
+
+  const tableWrap = element("div", "table-wrap");
+  const table = element("table", "student-table payment-table");
+  const thead = element("thead");
+  const headRow = element("tr");
+  ["납부일", "학생명", "학년/학번", "수납항목", "납부금액", "납부방식", "메모"].forEach((labelText) => headRow.append(element("th", "", labelText)));
+  thead.append(headRow);
+  const tbody = element("tbody");
+  tbody.id = "payment-rows";
+  table.append(thead, tbody);
+  tableWrap.append(table);
+  panel.append(tableWrap);
+
+  const empty = element("div", "empty-state");
+  empty.id = "payment-empty-state";
+  empty.append(icon("⌕", "empty-icon"), element("strong", "", "조건에 맞는 수납 기록이 없습니다."), element("span", "", "조회 월이나 검색 조건을 바꿔보세요."));
+  panel.append(empty);
+  view.append(panel);
+
+  let timer;
+  search.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(async () => {
+      state.paymentQuery = search.value.trim();
+      await loadPayments();
+    }, 250);
+  });
+  month.addEventListener("change", async () => {
+    state.paymentMonth = month.value;
+    await loadPayments();
+  });
+  method.addEventListener("change", async () => {
+    state.paymentMethod = method.value;
+    await loadPayments();
+  });
+  return view;
+}
+
+async function loadPaymentOverview() {
+  const { data, error } = await supabase.rpc("get_my_payment_overview");
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return false;
+  }
+  state.paymentMonths = Array.isArray(data?.months) ? data.months : [];
+  state.paymentMonth = state.paymentMonth || data?.latestMonth || state.paymentMonths[0] || "";
+  state.paymentReady = true;
+
+  const select = document.querySelector("#payment-month");
+  if (select) {
+    select.replaceChildren();
+    state.paymentMonths.forEach((value) => {
+      const option = element("option", "", value);
+      option.value = value;
+      option.selected = value === state.paymentMonth;
+      select.append(option);
+    });
+    select.disabled = state.paymentMonths.length === 0;
+  }
+  return true;
+}
+
+async function loadPayments() {
+  if (!state.paymentReady) {
+    const ready = await loadPaymentOverview();
+    if (!ready) return;
+  }
+  showNotice("");
+  const { data, error } = await supabase.rpc("search_my_payments", {
+    p_month: state.paymentMonth || null,
+    p_query: state.paymentQuery || null,
+    p_method: state.paymentMethod || null,
+    p_limit: 300,
+    p_offset: 0,
+  });
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.paymentMonth = data?.month || state.paymentMonth;
+  state.paymentRows = Array.isArray(data?.rows) ? data.rows : [];
+  state.paymentTotal = Number(data?.total || 0);
+  state.paymentAmount = Number(data?.totalAmount || 0);
+  renderPaymentRows();
+}
+
+function renderPaymentRows() {
+  const tbody = document.querySelector("#payment-rows");
+  const empty = document.querySelector("#payment-empty-state");
+  if (!tbody || !empty) return;
+  tbody.replaceChildren();
+  empty.hidden = state.paymentRows.length > 0;
+  state.paymentRows.forEach((payment) => {
+    const row = element("tr");
+    const nameCell = element("td");
+    const nameButton = element("button", "student-link", payment.studentName || "이름 없음");
+    nameButton.type = "button";
+    nameButton.addEventListener("click", () => openStudent(payment.studentId, nameButton));
+    nameCell.append(nameButton);
+    row.append(
+      element("td", "", payment.payDate || "-"),
+      nameCell,
+      element("td", "", payment.gradeLabel || "-"),
+      element("td", "", payment.itemType || "-"),
+      element("td", "money-cell", formatMoney(payment.amount)),
+      element("td", "", payment.paymentMethod || "-"),
+      element("td", "memo-cell", payment.memo || "-")
+    );
+    tbody.append(row);
+  });
+
+  const amount = document.querySelector("#payment-total-amount");
+  const count = document.querySelector("#payment-total-count");
+  const month = document.querySelector("#payment-selected-month");
+  if (amount) amount.textContent = formatMoney(state.paymentAmount);
+  if (count) count.textContent = `${state.paymentTotal.toLocaleString("ko-KR")}건`;
+  if (month) month.textContent = state.paymentMonth || "-";
 }
 
 function renderRows() {
@@ -326,11 +536,43 @@ async function openStudent(studentId, returnFocus) {
     detailRow("형제 그룹", data.siblingGroupName),
     detailRow("형제 할인액", formatMoney(data.siblingDiscount))
   );
+  const paymentAction = element("div", "modal-payment-action");
+  const paymentButton = element("button", "payment-history-button", "▣ 전체 수납기록 보기");
+  paymentButton.type = "button";
+  paymentAction.append(paymentButton);
+  const paymentHistory = element("section", "payment-history");
+  paymentHistory.hidden = true;
+  let paymentHistoryLoaded = false;
+  paymentButton.addEventListener("click", async () => {
+    if (paymentHistoryLoaded) {
+      paymentHistory.hidden = !paymentHistory.hidden;
+      paymentButton.textContent = paymentHistory.hidden ? "▣ 전체 수납기록 보기" : "▣ 수납기록 접기";
+      return;
+    }
+    paymentButton.disabled = true;
+    paymentButton.textContent = "수납 기록 불러오는 중…";
+    const { data: payments, error: paymentError } = await supabase.rpc("get_my_student_payments", {
+      p_student_id: studentId,
+      p_limit: 200,
+      p_offset: 0,
+    });
+    paymentButton.disabled = false;
+    if (paymentError) {
+      paymentButton.textContent = "다시 시도";
+      paymentHistory.hidden = false;
+      paymentHistory.replaceChildren(element("p", "history-error", normalizeError(paymentError)));
+      return;
+    }
+    renderStudentPaymentHistory(paymentHistory, payments);
+    paymentHistoryLoaded = true;
+    paymentHistory.hidden = false;
+    paymentButton.textContent = "▣ 수납기록 접기";
+  });
   const footer = element("footer", "modal-footer");
   const closeBottom = element("button", "secondary-button", "닫기");
   closeBottom.type = "button";
   footer.append(closeBottom);
-  dialog.append(header, details, footer);
+  dialog.append(header, details, paymentAction, paymentHistory, footer);
   backdrop.append(dialog);
   document.body.append(backdrop);
   document.body.classList.add("modal-open");
@@ -349,6 +591,43 @@ async function openStudent(studentId, returnFocus) {
     if (event.key === "Escape") dismiss();
   });
   close.focus();
+}
+
+function renderStudentPaymentHistory(container, data) {
+  container.replaceChildren();
+  const summary = element("div", "history-summary");
+  const copy = element("div");
+  copy.append(element("strong", "history-title", "전체 수납 기록"));
+  copy.append(element("span", "history-count", `총 ${Number(data?.total || 0).toLocaleString("ko-KR")}건`));
+  summary.append(copy, element("strong", "history-amount", formatMoney(data?.totalAmount)));
+  container.append(summary);
+
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  if (!rows.length) {
+    container.append(element("p", "history-empty", "등록된 수납 기록이 없습니다."));
+    return;
+  }
+  const wrap = element("div", "history-table-wrap");
+  const table = element("table", "history-table");
+  const thead = element("thead");
+  const head = element("tr");
+  ["귀속월", "납부일", "수납항목", "납부금액", "납부방식"].forEach((label) => head.append(element("th", "", label)));
+  thead.append(head);
+  const tbody = element("tbody");
+  rows.forEach((payment) => {
+    const row = element("tr");
+    row.append(
+      element("td", "", payment.paymentMonth || "-"),
+      element("td", "", payment.payDate || "-"),
+      element("td", "", payment.itemType || "-"),
+      element("td", "money-cell", formatMoney(payment.amount)),
+      element("td", "", payment.paymentMethod || "-")
+    );
+    tbody.append(row);
+  });
+  table.append(thead, tbody);
+  wrap.append(table);
+  container.append(wrap);
 }
 
 async function boot() {
