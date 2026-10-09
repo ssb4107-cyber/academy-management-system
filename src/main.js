@@ -26,6 +26,12 @@ const state = {
   paymentTotal: 0,
   paymentAmount: 0,
   paymentReady: false,
+  requestRows: [],
+  requestTotal: 0,
+  requestPending: 0,
+  requestStatus: "",
+  requestCanApprove: false,
+  requestReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -43,6 +49,7 @@ function icon(mark, className = "icon") {
 
 function normalizeError(error) {
   const message = String(error?.message || error || "알 수 없는 오류");
+  if (/최고 관리자만/i.test(message)) return "최고 관리자만 이 요청을 처리할 수 있습니다.";
   if (/registered|활성 사용자|권한/i.test(message)) {
     return "등록된 운영 계정이 아니거나 현재 사용이 중지된 계정입니다.";
   }
@@ -152,9 +159,14 @@ function renderApp(sessionData) {
   viewSwitcher.setAttribute("aria-label", "업무 화면 선택");
   const studentTab = element("button", "view-tab active", "학생 조회");
   const paymentTab = element("button", "view-tab", "수납 조회");
+  const requestTab = element("button", "view-tab", "수납 요청");
+  studentTab.id = "student-tab";
+  paymentTab.id = "payment-tab";
+  requestTab.id = "request-tab";
   studentTab.type = "button";
   paymentTab.type = "button";
-  viewSwitcher.append(studentTab, paymentTab);
+  requestTab.type = "button";
+  viewSwitcher.append(studentTab, paymentTab, requestTab);
   main.append(viewSwitcher);
 
   const studentView = element("div", "view-section");
@@ -218,7 +230,9 @@ function renderApp(sessionData) {
 
   const paymentView = createPaymentView();
   paymentView.hidden = true;
-  main.append(studentView, paymentView);
+  const requestView = createPaymentRequestView();
+  requestView.hidden = true;
+  main.append(studentView, paymentView, requestView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -244,20 +258,34 @@ function renderApp(sessionData) {
   studentTab.addEventListener("click", () => {
     studentView.hidden = false;
     paymentView.hidden = true;
+    requestView.hidden = true;
     studentTab.classList.add("active");
     paymentTab.classList.remove("active");
+    requestTab.classList.remove("active");
     showNotice("");
   });
   paymentTab.addEventListener("click", async () => {
     studentView.hidden = true;
     paymentView.hidden = false;
+    requestView.hidden = true;
     paymentTab.classList.add("active");
     studentTab.classList.remove("active");
+    requestTab.classList.remove("active");
     showNotice("");
     if (!state.paymentReady) {
       const ready = await loadPaymentOverview();
       if (ready) await loadPayments();
     }
+  });
+  requestTab.addEventListener("click", async () => {
+    studentView.hidden = true;
+    paymentView.hidden = true;
+    requestView.hidden = false;
+    requestTab.classList.add("active");
+    studentTab.classList.remove("active");
+    paymentTab.classList.remove("active");
+    showNotice("");
+    await loadPaymentRequests();
   });
 }
 
@@ -270,7 +298,12 @@ function createPaymentView() {
   title.append(element("p", "page-copy", "귀속월별 수납 내역과 학생별 납부 기록을 확인할 수 있습니다."));
   const secure = element("div", "sync-badge");
   secure.append(icon("●", "sync-dot"), element("span", "", "권한 범위 적용"));
-  heading.append(title, secure);
+  const headingActions = element("div", "heading-actions");
+  const createButton = element("button", "primary-action-button", "+ 수납 등록 요청");
+  createButton.type = "button";
+  createButton.addEventListener("click", () => openPaymentRequestModal());
+  headingActions.append(secure, createButton);
+  heading.append(title, headingActions);
   view.append(heading);
 
   const stats = element("section", "stats-grid");
@@ -303,7 +336,7 @@ function createPaymentView() {
   const method = element("select", "status-select");
   method.id = "payment-method";
   method.setAttribute("aria-label", "납부 방식 필터");
-  ["", "카드", "현금영수증", "동백전", "동백전QR", "토스", "모락"].forEach((value) => {
+  ["", "카드", "현금영수증", "동백전", "동백전QR", "토스", "모락", "계좌이체"].forEach((value) => {
     const option = element("option", "", value || "전체 방식");
     option.value = value;
     option.selected = value === state.paymentMethod;
@@ -316,7 +349,7 @@ function createPaymentView() {
   const table = element("table", "student-table payment-table");
   const thead = element("thead");
   const headRow = element("tr");
-  ["납부일", "학생명", "학년/학번", "수납항목", "납부금액", "납부방식", "메모"].forEach((labelText) => headRow.append(element("th", "", labelText)));
+  ["납부일", "학생명", "학년/학번", "수납항목", "납부금액", "납부방식", "메모", "요청"].forEach((labelText) => headRow.append(element("th", "", labelText)));
   thead.append(headRow);
   const tbody = element("tbody");
   tbody.id = "payment-rows";
@@ -410,6 +443,11 @@ function renderPaymentRows() {
     nameButton.type = "button";
     nameButton.addEventListener("click", () => openStudent(payment.studentId, nameButton));
     nameCell.append(nameButton);
+    const actionCell = element("td");
+    const editButton = element("button", "table-action-button", "수정 요청");
+    editButton.type = "button";
+    editButton.addEventListener("click", () => openPaymentRequestModal(payment));
+    actionCell.append(editButton);
     row.append(
       element("td", "", payment.payDate || "-"),
       nameCell,
@@ -417,7 +455,8 @@ function renderPaymentRows() {
       element("td", "", payment.itemType || "-"),
       element("td", "money-cell", formatMoney(payment.amount)),
       element("td", "", payment.paymentMethod || "-"),
-      element("td", "memo-cell", payment.memo || "-")
+      element("td", "memo-cell", payment.memo || "-"),
+      actionCell
     );
     tbody.append(row);
   });
@@ -428,6 +467,332 @@ function renderPaymentRows() {
   if (amount) amount.textContent = formatMoney(state.paymentAmount);
   if (count) count.textContent = `${state.paymentTotal.toLocaleString("ko-KR")}건`;
   if (month) month.textContent = state.paymentMonth || "-";
+}
+
+function createPaymentRequestView() {
+  const view = element("div", "view-section");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow", "PAYMENT REQUESTS"));
+  title.append(element("h1", "page-title", "수납 요청 처리"));
+  title.append(element("p", "page-copy", state.profile.role === "SUPER_ADMIN"
+    ? "요청 내용을 확인한 뒤 승인하면 수납 원장과 변경 이력에 함께 반영됩니다."
+    : "등록·수정 요청은 최고 관리자 승인 후 수납 원장에 반영됩니다."));
+  const createButton = element("button", "primary-action-button", "+ 새 수납 요청");
+  createButton.type = "button";
+  createButton.addEventListener("click", () => openPaymentRequestModal());
+  heading.append(title, createButton);
+  view.append(heading);
+
+  const stats = element("section", "stats-grid");
+  const total = createStat("표시 요청", "0건", true);
+  total.querySelector(".stat-value").id = "request-total";
+  const pending = createStat("승인 대기", "0건");
+  pending.querySelector(".stat-value").id = "request-pending";
+  const role = createStat("현재 역할", state.profile.role === "SUPER_ADMIN" ? "승인 가능" : "요청 가능");
+  stats.append(total, pending, role);
+  view.append(stats);
+
+  const panel = element("section", "student-panel request-panel");
+  const toolbar = element("div", "toolbar request-toolbar");
+  const description = element("p", "request-toolbar-copy", "처리 완료 요청도 이력으로 보존됩니다.");
+  const status = element("select", "status-select");
+  status.setAttribute("aria-label", "수납 요청 상태 필터");
+  [["", "전체 상태"], ["PENDING", "승인 대기"], ["APPROVED", "승인 완료"], ["REJECTED", "반려"], ["CANCELLED", "취소"]]
+    .forEach(([value, labelText]) => {
+      const option = element("option", "", labelText);
+      option.value = value;
+      option.selected = value === state.requestStatus;
+      status.append(option);
+    });
+  status.addEventListener("change", async () => {
+    state.requestStatus = status.value;
+    await loadPaymentRequests();
+  });
+  const reload = element("button", "quiet-button", "새로고침");
+  reload.type = "button";
+  reload.addEventListener("click", loadPaymentRequests);
+  toolbar.append(description, status, reload);
+  panel.append(toolbar);
+  const list = element("div", "request-list");
+  list.id = "payment-request-list";
+  panel.append(list);
+  view.append(panel);
+  return view;
+}
+
+async function loadPaymentRequests() {
+  const { data, error } = await supabase.rpc("search_my_payment_requests", {
+    p_status: state.requestStatus || null,
+    p_limit: 200,
+    p_offset: 0,
+  });
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.requestRows = Array.isArray(data?.rows) ? data.rows : [];
+  state.requestTotal = Number(data?.total || 0);
+  state.requestPending = Number(data?.pending || 0);
+  state.requestCanApprove = data?.canApprove === true;
+  state.requestReady = true;
+  renderPaymentRequests();
+}
+
+function requestStatusLabel(status) {
+  return { PENDING: "승인 대기", APPROVED: "승인 완료", REJECTED: "반려", CANCELLED: "취소" }[status] || status;
+}
+
+function renderPaymentRequests() {
+  const list = document.querySelector("#payment-request-list");
+  if (!list) return;
+  list.replaceChildren();
+  const total = document.querySelector("#request-total");
+  const pending = document.querySelector("#request-pending");
+  if (total) total.textContent = `${state.requestTotal.toLocaleString("ko-KR")}건`;
+  if (pending) pending.textContent = `${state.requestPending.toLocaleString("ko-KR")}건`;
+  if (!state.requestRows.length) {
+    const empty = element("div", "empty-state");
+    empty.append(icon("✓", "empty-icon"), element("strong", "", "표시할 수납 요청이 없습니다."), element("span", "", "상태 조건을 바꾸거나 새 요청을 등록해보세요."));
+    list.append(empty);
+    return;
+  }
+
+  state.requestRows.forEach((request) => {
+    const card = element("article", `request-card status-${String(request.status || "").toLowerCase()}`);
+    const head = element("div", "request-card-head");
+    const identity = element("div");
+    const nameButton = element("button", "student-link request-student", request.studentName || "학생");
+    nameButton.type = "button";
+    nameButton.addEventListener("click", () => openStudent(request.studentId, nameButton));
+    identity.append(nameButton, element("span", "request-kind", request.operation === "UPDATE" ? "수정 요청" : "등록 요청"));
+    head.append(identity, element("span", `request-status status-${String(request.status || "").toLowerCase()}`, requestStatusLabel(request.status)));
+
+    const grid = element("dl", "request-grid");
+    [["귀속월", request.paymentMonth], ["납부일", request.payDate], ["수납항목", request.itemType],
+      ["금액", formatMoney(request.amount)], ["납부방식", request.paymentMethod], ["요청자", request.requesterName]]
+      .forEach(([label, value]) => grid.append(detailRow(label, value)));
+    card.append(head, grid);
+    if (request.memo) card.append(element("p", "request-note", `메모: ${request.memo}`));
+    if (request.reason) card.append(element("p", "request-note", `요청 사유: ${request.reason}`));
+    if (Number(request.duplicatePaymentCount || 0) > 0 && request.status === "PENDING") {
+      card.append(element("p", "request-warning", `같은 학생·귀속월·항목·금액·납부일의 기존 수납이 ${request.duplicatePaymentCount}건 있습니다.`));
+    }
+    if (request.decisionMemo) card.append(element("p", "request-decision", `처리 메모: ${request.decisionMemo}`));
+    card.append(element("p", "request-meta", `${request.createdAt || ""}${request.processedAt ? ` · 처리 ${request.processedAt}` : ""}`));
+
+    if (request.status === "PENDING") {
+      const actions = element("div", "request-actions");
+      if (state.requestCanApprove) {
+        const reject = element("button", "danger-button", "반려");
+        const approve = element("button", "approve-button", "승인·반영");
+        reject.type = approve.type = "button";
+        reject.addEventListener("click", () => decidePaymentRequest(request, "REJECT", reject));
+        approve.addEventListener("click", () => decidePaymentRequest(request, "APPROVE", approve));
+        actions.append(reject, approve);
+      } else {
+        const cancel = element("button", "danger-button", "요청 취소");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => cancelPaymentRequest(request, cancel));
+        actions.append(cancel);
+      }
+      card.append(actions);
+    }
+    list.append(card);
+  });
+}
+
+async function decidePaymentRequest(request, decision, button) {
+  const actionText = decision === "APPROVE" ? "승인하여 수납 원장에 반영" : "반려";
+  if (!window.confirm(`${request.studentName} 학생의 ${formatMoney(request.amount)} 요청을 ${actionText}할까요?`)) return;
+  const memo = window.prompt("처리 메모가 있으면 입력해주세요. (선택)", "");
+  if (memo === null) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc("decide_payment_request", {
+    p_request_id: request.requestId,
+    p_decision: decision,
+    p_memo: memo.trim() || null,
+  });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    await loadPaymentRequests();
+    return;
+  }
+  state.paymentReady = false;
+  showNotice(decision === "APPROVE" ? "승인한 내용이 수납 원장과 변경 이력에 반영되었습니다." : "수납 요청을 반려했습니다.", "success");
+  await loadPaymentRequests();
+}
+
+async function cancelPaymentRequest(request, button) {
+  if (!window.confirm("아직 승인되지 않은 이 수납 요청을 취소할까요?")) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc("cancel_my_payment_request", { p_request_id: request.requestId });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  showNotice("수납 요청을 취소했습니다.", "success");
+  await loadPaymentRequests();
+}
+
+async function loadRequestStudentOptions() {
+  const { data, error } = await supabase.rpc("search_my_students", {
+    p_query: null,
+    p_status: null,
+    p_limit: 200,
+    p_offset: 0,
+  });
+  if (error) throw error;
+  return Array.isArray(data?.rows) ? data.rows : [];
+}
+
+async function openPaymentRequestModal(payment = null) {
+  let students;
+  try {
+    students = await loadRequestStudentOptions();
+  } catch (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  const isEdit = Boolean(payment?.paymentId);
+  const backdrop = element("div", "modal-backdrop");
+  const dialog = element("section", "student-modal payment-request-modal");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "payment-request-title");
+  const header = element("header", "modal-header");
+  const titleWrap = element("div", "modal-title-wrap");
+  titleWrap.append(icon("₩", "modal-title-icon"));
+  const titles = element("div");
+  const title = element("h2", "modal-title", isEdit ? "수납 수정 요청" : "수납 등록 요청");
+  title.id = "payment-request-title";
+  titles.append(title, element("p", "modal-student-name", "승인 전에는 원장이 변경되지 않습니다."));
+  titleWrap.append(titles);
+  const close = element("button", "modal-close", "×");
+  close.type = "button";
+  close.setAttribute("aria-label", "닫기");
+  header.append(titleWrap, close);
+
+  const form = element("form", "request-form");
+  const field = (labelText, control) => {
+    const wrap = element("label", "request-field");
+    wrap.append(element("span", "field-label", labelText), control);
+    return wrap;
+  };
+  const student = element("select", "text-input");
+  student.required = true;
+  const studentPlaceholder = element("option", "", "학생 선택");
+  studentPlaceholder.value = "";
+  studentPlaceholder.disabled = true;
+  studentPlaceholder.selected = !isEdit;
+  student.append(studentPlaceholder);
+  students.forEach((item) => {
+    const option = element("option", "", `${item.studentName} · ${item.gradeLabel || "학년 미지정"}`);
+    option.value = item.studentId;
+    option.selected = item.studentId === payment?.studentId;
+    student.append(option);
+  });
+  if (isEdit) student.disabled = true;
+  const payDate = element("input", "text-input");
+  payDate.type = "date";
+  payDate.required = true;
+  payDate.value = payment?.payDate || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  const month = element("input", "text-input");
+  month.type = "month";
+  month.required = true;
+  month.value = payment?.paymentMonth || state.paymentMonth || payDate.value.slice(0, 7);
+  const itemType = element("select", "text-input");
+  ["수강료", "특강비"].forEach((value) => {
+    const option = element("option", "", value);
+    option.value = value;
+    option.selected = value === (payment?.itemType || "수강료");
+    itemType.append(option);
+  });
+  const amount = element("input", "text-input");
+  amount.type = "number";
+  amount.min = "0";
+  amount.max = "100000000";
+  amount.step = "1";
+  amount.required = true;
+  amount.value = payment?.amount ?? "";
+  const method = element("select", "text-input");
+  ["모락", "카드", "동백전QR", "현금영수증", "계좌이체", "동백전", "토스"].forEach((value) => {
+    const option = element("option", "", value);
+    option.value = value;
+    option.selected = value === (payment?.paymentMethod || "카드");
+    method.append(option);
+  });
+  const memo = element("textarea", "text-area");
+  memo.maxLength = 1000;
+  memo.placeholder = "수납 메모 (선택)";
+  memo.value = payment?.memo || "";
+  const reason = element("textarea", "text-area");
+  reason.maxLength = 500;
+  reason.placeholder = isEdit ? "수정 사유를 입력해주세요." : "요청 사유 (선택)";
+  if (isEdit) reason.required = true;
+
+  const fields = element("div", "request-form-grid");
+  fields.append(
+    field("학생", student), field("납부일", payDate), field("귀속월", month),
+    field("수납항목", itemType), field("납부금액", amount), field("납부방식", method),
+    field("메모", memo), field("요청 사유", reason)
+  );
+  const footer = element("footer", "modal-footer request-form-footer");
+  const cancel = element("button", "secondary-button", "취소");
+  cancel.type = "button";
+  const submit = element("button", "primary-action-button", isEdit ? "수정 승인 요청" : "등록 승인 요청");
+  submit.type = "submit";
+  footer.append(cancel, submit);
+  form.append(fields, footer);
+  dialog.append(header, form);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+  document.body.classList.add("modal-open");
+
+  const idempotencyKey = crypto.randomUUID();
+  const dismiss = () => {
+    backdrop.remove();
+    document.body.classList.remove("modal-open");
+  };
+  close.addEventListener("click", dismiss);
+  cancel.addEventListener("click", dismiss);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) dismiss(); });
+  dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") dismiss(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    submit.textContent = "요청 저장 중…";
+    const { data, error } = await supabase.rpc("submit_payment_request", {
+      p_operation: isEdit ? "UPDATE" : "CREATE",
+      p_student_id: student.value,
+      p_pay_date: payDate.value,
+      p_payment_month: month.value,
+      p_item_type: itemType.value,
+      p_amount: Number(amount.value),
+      p_payment_method: method.value,
+      p_memo: memo.value.trim() || null,
+      p_reason: reason.value.trim() || null,
+      p_target_payment_id: payment?.paymentId || null,
+      p_idempotency_key: idempotencyKey,
+    });
+    submit.disabled = false;
+    submit.textContent = isEdit ? "수정 승인 요청" : "등록 승인 요청";
+    if (error) {
+      const inline = form.querySelector(".form-error") || element("p", "form-error");
+      inline.textContent = normalizeError(error);
+      if (!inline.parentNode) form.insertBefore(inline, footer);
+      return;
+    }
+    dismiss();
+    document.querySelector("#request-tab")?.click();
+    const duplicateCount = Number(data?.duplicatePaymentCount || 0);
+    showNotice(duplicateCount > 0
+      ? `요청을 등록했습니다. 같은 조건의 기존 수납 ${duplicateCount}건이 있어 승인 화면에 경고가 표시됩니다.`
+      : "수납 승인 요청을 등록했습니다.", "success");
+  });
+  student.focus();
 }
 
 function renderRows() {
