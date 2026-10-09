@@ -100,6 +100,7 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .student-table tbody tr:hover { background: #fbfdff; }
 .student-link { padding: 0; border: 0; color: #175fc7; background: transparent; font-weight: 800; text-decoration: underline; text-decoration-color: #b8d2f6; text-underline-offset: 4px; }
 .student-link:hover { color: #0b489c; }
+.scheduled-badge { display: inline-flex; margin-left: 8px; padding: 3px 7px; border-radius: 999px; color: #8a5600; background: #fff0c9; font-size: 10px; font-weight: 850; }
 .table-action-button { padding: 7px 10px; border: 1px solid #b9cff0; border-radius: 8px; color: #175cb9; background: #f1f6ff; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .table-action-button:hover { background: #e3efff; }
 .money-cell { color: #165dbe !important; font-weight: 750; }
@@ -145,7 +146,11 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .history-empty, .history-error { margin: 0; padding: 28px 18px; color: #7a8598; font-size: 13px; text-align: center; }
 .history-error { color: #a61b1b; background: #fff3f3; }
 .modal-footer { display: flex; justify-content: flex-end; padding: 17px 26px 22px; }
+.modal-footer { gap: 9px; }
 .secondary-button { min-width: 88px; height: 42px; border: 1px solid #b7cef0; border-radius: 10px; color: #175cb9; background: #edf4ff; font-weight: 800; }
+.scheduled-changes { margin: 0 26px; padding: 14px 16px; border: 1px solid #f0d89c; border-radius: 11px; color: #74501a; background: #fff9e9; }
+.scheduled-title { display: block; margin-bottom: 7px; color: #68430c; font-size: 13px; }
+.scheduled-item { margin: 4px 0 0; font-size: 12px; line-height: 1.5; }
 
 .request-toolbar { align-items: center; justify-content: flex-end; }
 .request-toolbar-copy { margin: 0 auto 0 0; color: var(--muted); font-size: 13px; }
@@ -156,6 +161,7 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .request-card.status-rejected, .request-card.status-cancelled { border-left-color: #d1645b; background: #fffafa; }
 .request-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .request-student { font-size: 17px; }
+.request-student-name { color: var(--navy); font-size: 17px; }
 .request-kind { display: inline-block; margin-left: 9px; padding: 4px 8px; border-radius: 999px; color: #5f6d82; background: #eef2f7; font-size: 11px; font-weight: 800; }
 .request-status { display: inline-flex; padding: 6px 10px; border-radius: 999px; color: #5b6678; background: #edf0f4; font-size: 12px; font-weight: 850; white-space: nowrap; }
 .request-status.status-pending { color: #8a5600; background: #fff0c9; }
@@ -174,16 +180,20 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .danger-button { border: 1px solid #e2aaa5; color: #aa3d34; background: #fff2f1; }
 
 .payment-request-modal { width: min(100%, 760px); }
+.student-request-modal { width: min(100%, 820px); }
 .request-form { padding: 0; }
 .request-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 22px 26px 8px; }
 .request-field { display: block; }
 .request-field:nth-last-child(-n+2) { grid-column: span 2; }
+.student-request-modal .request-field:nth-last-child(-n+2) { grid-column: auto; }
+.student-request-modal .field-wide { grid-column: 1 / -1; }
 .request-field .text-input, .request-field .text-area { margin-top: 7px; }
 .text-area { width: 100%; min-height: 82px; padding: 12px 14px; resize: vertical; border: 1px solid #ccd4e0; border-radius: 12px; outline: none; }
 .text-area:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(29, 111, 233, 0.1); }
 .request-form-footer { gap: 9px; }
 .request-form-footer .primary-action-button { min-width: 140px; }
 .form-error { margin: 12px 26px 0; padding: 11px 13px; border-radius: 9px; color: #a61b1b; background: #fff0f0; font-size: 13px; }
+.form-warning { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid #f0d89c; border-radius: 10px; color: #74501a; background: #fff9e9; font-size: 12px; line-height: 1.45; }
 
 @media (max-width: 760px) {
   .app-header { padding: 13px 18px; }
@@ -201,11 +211,13 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .detail-row, .detail-row:nth-child(odd), .detail-row:nth-child(even) { grid-template-columns: 120px minmax(0, 1fr); padding: 0; border-left: 0; }
   .modal-header { padding: 20px; }
   .modal-payment-action { padding: 14px 20px 0; }
+  .scheduled-changes { margin: 0 20px; }
   .payment-history { margin: 12px 20px 0; }
   .modal-footer { padding: 14px 20px 20px; }
   .request-grid { grid-template-columns: 1fr 1fr; }
   .request-form-grid { grid-template-columns: 1fr; padding: 18px 20px 8px; }
   .request-field:nth-last-child(-n+2) { grid-column: auto; }
+  .student-request-modal .field-wide { grid-column: auto; }
 }
 
 @media (max-width: 460px) {
