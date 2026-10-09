@@ -76,6 +76,9 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .heading-actions { display: flex; align-items: center; gap: 10px; }
 .primary-action-button { min-height: 42px; padding: 0 17px; border: 0; border-radius: 10px; color: white; background: var(--blue); font-weight: 850; box-shadow: 0 8px 18px rgba(29, 111, 233, 0.18); }
 .primary-action-button:hover { background: var(--blue-dark); }
+.vacation-eyebrow { color: #b36b00; }
+.vacation-action-button { min-height: 42px; padding: 0 17px; border: 0; border-radius: 10px; color: #fff; background: #e69a12; font-weight: 850; box-shadow: 0 8px 18px rgba(230,154,18,0.2); }
+.vacation-action-button:hover { background: #c98000; }
 .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 30px; }
 .stat-card { min-height: 112px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: white; }
 .stat-card.accent { color: white; border-color: transparent; background: linear-gradient(130deg, #1d6fe9, #2862bb); box-shadow: 0 12px 28px rgba(29, 111, 233, 0.2); }
@@ -178,6 +181,21 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .approve-button, .danger-button { min-height: 40px; padding: 0 15px; border-radius: 9px; font-weight: 850; }
 .approve-button { border: 1px solid #18864b; color: white; background: #18864b; }
 .danger-button { border: 1px solid #e2aaa5; color: #aa3d34; background: #fff2f1; }
+.danger-button.compact { min-height: 34px; padding: 0 10px; font-size: 12px; }
+
+.vacation-toolbar { align-items: center; }
+.vacation-toolbar-title { margin-right: auto; color: var(--navy); font-size: 14px; }
+.vacation-student-select { min-width: min(100%, 410px); }
+.vacation-period-list { display: grid; gap: 10px; padding: 18px; }
+.vacation-empty { margin: 0; padding: 28px 16px; color: #7a8598; text-align: center; }
+.vacation-period-item { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 14px; padding: 15px 16px; border: 1px solid #e5eaf2; border-radius: 12px; background: #fffdf8; }
+.vacation-type { display: inline-flex; padding: 5px 9px; border-radius: 999px; color: #8a5600; background: #fff0c9; font-size: 11px; font-weight: 850; white-space: nowrap; }
+.vacation-type.auto { color: #5b6678; background: #edf0f4; }
+.vacation-period-dates, .vacation-period-reason { display: block; }
+.vacation-period-dates { color: var(--navy); font-size: 14px; }
+.vacation-period-reason { margin-top: 5px; color: #6f7a8e; font-size: 12px; }
+.vacation-period-actions { display: flex; align-items: center; gap: 8px; }
+.vacation-managed { color: #7a8598; font-size: 12px; font-weight: 750; }
 
 .payment-request-modal { width: min(100%, 760px); }
 .student-request-modal { width: min(100%, 820px); }
@@ -187,6 +205,10 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .request-field:nth-last-child(-n+2) { grid-column: span 2; }
 .student-request-modal .request-field:nth-last-child(-n+2) { grid-column: auto; }
 .student-request-modal .field-wide { grid-column: 1 / -1; }
+.vacation-request-modal .request-field:nth-last-child(-n+2) { grid-column: auto; }
+.vacation-request-modal .field-wide { grid-column: 1 / -1; }
+.vacation-icon { color: #a96600; background: #fff3d9; }
+.vacation-copy { color: #a96600; }
 .request-field .text-input, .request-field .text-area { margin-top: 7px; }
 .text-area { width: 100%; min-height: 82px; padding: 12px 14px; resize: vertical; border: 1px solid #ccd4e0; border-radius: 12px; outline: none; }
 .text-area:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(29, 111, 233, 0.1); }
@@ -218,6 +240,9 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .request-form-grid { grid-template-columns: 1fr; padding: 18px 20px 8px; }
   .request-field:nth-last-child(-n+2) { grid-column: auto; }
   .student-request-modal .field-wide { grid-column: auto; }
+  .vacation-request-modal .field-wide { grid-column: auto; }
+  .vacation-period-item { grid-template-columns: 1fr; }
+  .vacation-period-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 460px) {

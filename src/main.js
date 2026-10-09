@@ -39,6 +39,15 @@ const state = {
   studentRequestStatus: "",
   studentRequestCanApprove: false,
   studentRequestReady: false,
+  vacationStudents: [],
+  vacationStudentId: "",
+  vacationPeriods: [],
+  vacationRequestRows: [],
+  vacationRequestTotal: 0,
+  vacationRequestPending: 0,
+  vacationRequestStatus: "",
+  vacationRequestCanApprove: false,
+  vacationReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -70,6 +79,12 @@ function showNotice(message, tone = "info") {
   notice.textContent = message;
   notice.dataset.tone = tone;
   notice.hidden = !message;
+}
+
+function hasPermission(permission) {
+  if (state.profile?.role === "SUPER_ADMIN") return true;
+  const values = Array.isArray(state.profile?.permissions) ? state.profile.permissions : [];
+  return values.join(",").split(",").map((value) => value.trim()).includes(permission);
 }
 
 function renderLogin() {
@@ -168,15 +183,18 @@ function renderApp(sessionData) {
   const paymentTab = element("button", "view-tab", "수납 조회");
   const requestTab = element("button", "view-tab", "수납 요청");
   const studentRequestTab = element("button", "view-tab", "학생 요청");
+  const vacationTab = element("button", "view-tab", "휴가 관리");
   studentTab.id = "student-tab";
   paymentTab.id = "payment-tab";
   requestTab.id = "request-tab";
   studentRequestTab.id = "student-request-tab";
+  vacationTab.id = "vacation-tab";
   studentTab.type = "button";
   paymentTab.type = "button";
   requestTab.type = "button";
   studentRequestTab.type = "button";
-  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab);
+  vacationTab.type = "button";
+  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab);
   main.append(viewSwitcher);
 
   const studentView = element("div", "view-section");
@@ -252,7 +270,9 @@ function renderApp(sessionData) {
   requestView.hidden = true;
   const studentRequestView = createStudentRequestView();
   studentRequestView.hidden = true;
-  main.append(studentView, paymentView, requestView, studentRequestView);
+  const vacationView = createVacationView();
+  vacationView.hidden = true;
+  main.append(studentView, paymentView, requestView, studentRequestView, vacationView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -280,10 +300,12 @@ function renderApp(sessionData) {
     paymentView.hidden = true;
     requestView.hidden = true;
     studentRequestView.hidden = true;
+    vacationView.hidden = true;
     studentTab.classList.add("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
     showNotice("");
   });
   paymentTab.addEventListener("click", async () => {
@@ -291,10 +313,12 @@ function renderApp(sessionData) {
     paymentView.hidden = false;
     requestView.hidden = true;
     studentRequestView.hidden = true;
+    vacationView.hidden = true;
     paymentTab.classList.add("active");
     studentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
     showNotice("");
     if (!state.paymentReady) {
       const ready = await loadPaymentOverview();
@@ -306,10 +330,12 @@ function renderApp(sessionData) {
     paymentView.hidden = true;
     requestView.hidden = false;
     studentRequestView.hidden = true;
+    vacationView.hidden = true;
     requestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
     showNotice("");
     await loadPaymentRequests();
   });
@@ -318,12 +344,28 @@ function renderApp(sessionData) {
     paymentView.hidden = true;
     requestView.hidden = true;
     studentRequestView.hidden = false;
+    vacationView.hidden = true;
     studentRequestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
     showNotice("");
     await loadStudentRequests();
+  });
+  vacationTab.addEventListener("click", async () => {
+    studentView.hidden = true;
+    paymentView.hidden = true;
+    requestView.hidden = true;
+    studentRequestView.hidden = true;
+    vacationView.hidden = false;
+    vacationTab.classList.add("active");
+    studentTab.classList.remove("active");
+    paymentTab.classList.remove("active");
+    requestTab.classList.remove("active");
+    studentRequestTab.classList.remove("active");
+    showNotice("");
+    await loadVacationWorkspace();
   });
 }
 
@@ -1220,6 +1262,417 @@ async function openStudentRequestModal(studentId = null) {
   name.focus();
 }
 
+function createVacationView() {
+  const view = element("div", "view-section");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow vacation-eyebrow", "VACATION MANAGEMENT"));
+  title.append(element("h1", "page-title", "학생 휴가 관리"));
+  title.append(element("p", "page-copy", "휴가 기간을 조회하고 등록·수정·휴지통 이동을 승인 요청할 수 있습니다."));
+  const createButton = element("button", "vacation-action-button", "+ 휴가 등록 요청");
+  createButton.type = "button";
+  createButton.hidden = !hasPermission("STUDENT_VACATION");
+  createButton.addEventListener("click", () => openVacationRequestModal());
+  heading.append(title, createButton);
+  view.append(heading);
+
+  const stats = element("section", "stats-grid");
+  const periodStat = createStat("선택 학생 기간", "0건", true);
+  periodStat.querySelector(".stat-value").id = "vacation-period-total";
+  const requestStat = createStat("표시 요청", "0건");
+  requestStat.querySelector(".stat-value").id = "vacation-request-total";
+  const pendingStat = createStat("승인 대기", "0건");
+  pendingStat.querySelector(".stat-value").id = "vacation-request-pending";
+  stats.append(periodStat, requestStat, pendingStat);
+  view.append(stats);
+
+  const periodPanel = element("section", "student-panel vacation-period-panel");
+  const toolbar = element("div", "toolbar vacation-toolbar");
+  const student = element("select", "status-select vacation-student-select");
+  student.id = "vacation-student-select";
+  student.setAttribute("aria-label", "휴가 관리 학생 선택");
+  student.addEventListener("change", async () => {
+    state.vacationStudentId = student.value;
+    await loadVacationPeriods();
+  });
+  const refresh = element("button", "quiet-button", "선택 학생 새로고침");
+  refresh.type = "button";
+  refresh.addEventListener("click", loadVacationPeriods);
+  toolbar.append(element("strong", "vacation-toolbar-title", "학생별 휴가·퇴원공백"), student, refresh);
+  periodPanel.append(toolbar);
+  const periods = element("div", "vacation-period-list");
+  periods.id = "vacation-period-list";
+  periodPanel.append(periods);
+  view.append(periodPanel);
+
+  const requestPanel = element("section", "student-panel request-panel");
+  const requestToolbar = element("div", "toolbar request-toolbar");
+  const description = element("p", "request-toolbar-copy", "승인 완료·반려·취소 요청도 감사 이력으로 보존됩니다.");
+  const status = element("select", "status-select");
+  status.setAttribute("aria-label", "휴가 요청 상태 필터");
+  [["", "전체 상태"], ["PENDING", "승인 대기"], ["APPROVED", "승인 완료"], ["REJECTED", "반려"], ["CANCELLED", "취소"]]
+    .forEach(([value, labelText]) => {
+      const option = element("option", "", labelText);
+      option.value = value;
+      option.selected = value === state.vacationRequestStatus;
+      status.append(option);
+    });
+  status.addEventListener("change", async () => {
+    state.vacationRequestStatus = status.value;
+    await loadVacationRequests();
+  });
+  const requestRefresh = element("button", "quiet-button", "요청 새로고침");
+  requestRefresh.type = "button";
+  requestRefresh.addEventListener("click", loadVacationRequests);
+  requestToolbar.append(description, status, requestRefresh);
+  requestPanel.append(requestToolbar);
+  const requests = element("div", "request-list");
+  requests.id = "vacation-request-list";
+  requestPanel.append(requests);
+  view.append(requestPanel);
+  return view;
+}
+
+async function loadVacationWorkspace() {
+  if (!state.vacationReady) {
+    try {
+      state.vacationStudents = await loadRequestStudentOptions();
+      state.vacationReady = true;
+    } catch (error) {
+      showNotice(normalizeError(error), "error");
+      return;
+    }
+  }
+  renderVacationStudentOptions();
+  await Promise.all([loadVacationRequests(), loadVacationPeriods()]);
+}
+
+function renderVacationStudentOptions() {
+  const select = document.querySelector("#vacation-student-select");
+  if (!select) return;
+  select.replaceChildren();
+  const placeholder = element("option", "", `학생 선택 (${state.vacationStudents.length}명)`);
+  placeholder.value = "";
+  placeholder.selected = !state.vacationStudentId;
+  select.append(placeholder);
+  state.vacationStudents.forEach((student) => {
+    const option = element("option", "", `${student.studentName} · ${student.gradeLabel || "학년 미지정"} · ${student.teacherName || "담당 미지정"}`);
+    option.value = student.studentId;
+    option.selected = student.studentId === state.vacationStudentId;
+    select.append(option);
+  });
+}
+
+async function loadVacationPeriods() {
+  if (!state.vacationStudentId) {
+    state.vacationPeriods = [];
+    renderVacationPeriods();
+    return;
+  }
+  const { data, error } = await supabase.rpc("get_my_student_vacations", { p_student_id: state.vacationStudentId });
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.vacationPeriods = Array.isArray(data?.rows) ? data.rows : [];
+  renderVacationPeriods();
+}
+
+function renderVacationPeriods() {
+  const list = document.querySelector("#vacation-period-list");
+  const total = document.querySelector("#vacation-period-total");
+  if (total) total.textContent = `${state.vacationPeriods.length.toLocaleString("ko-KR")}건`;
+  if (!list) return;
+  list.replaceChildren();
+  if (!state.vacationStudentId) {
+    list.append(element("p", "vacation-empty", "학생을 선택하면 등록된 휴가와 퇴원공백을 표시합니다."));
+    return;
+  }
+  if (!state.vacationPeriods.length) {
+    list.append(element("p", "vacation-empty", "등록된 휴가·퇴원공백이 없습니다."));
+    return;
+  }
+  state.vacationPeriods.forEach((period) => {
+    const item = element("article", "vacation-period-item");
+    const copy = element("div", "vacation-period-copy");
+    copy.append(element("strong", "vacation-period-dates", `${period.startDate} ~ ${period.endDate}`));
+    copy.append(element("span", "vacation-period-reason", period.reason || "사유 없음"));
+    const badge = element("span", period.periodType === "퇴원공백" ? "vacation-type auto" : "vacation-type", period.periodType || "일반휴가");
+    item.append(badge, copy);
+    const actions = element("div", "vacation-period-actions");
+    if (period.canEdit && hasPermission("STUDENT_VACATION")) {
+      const edit = element("button", "table-action-button", "수정 요청");
+      const remove = element("button", "danger-button compact", "휴지통 요청");
+      edit.type = remove.type = "button";
+      edit.addEventListener("click", () => openVacationRequestModal(period));
+      remove.addEventListener("click", () => requestVacationDelete(period, remove));
+      actions.append(edit, remove);
+    } else {
+      actions.append(element("span", "vacation-managed", "자동 관리"));
+    }
+    item.append(actions);
+    list.append(item);
+  });
+}
+
+async function loadVacationRequests() {
+  const { data, error } = await supabase.rpc("search_my_vacation_requests", {
+    p_status: state.vacationRequestStatus || null,
+    p_limit: 200,
+    p_offset: 0,
+  });
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.vacationRequestRows = Array.isArray(data?.rows) ? data.rows : [];
+  state.vacationRequestTotal = Number(data?.total || 0);
+  state.vacationRequestPending = Number(data?.pending || 0);
+  state.vacationRequestCanApprove = data?.canApprove === true;
+  renderVacationRequests();
+}
+
+function renderVacationRequests() {
+  const list = document.querySelector("#vacation-request-list");
+  if (!list) return;
+  list.replaceChildren();
+  const total = document.querySelector("#vacation-request-total");
+  const pending = document.querySelector("#vacation-request-pending");
+  if (total) total.textContent = `${state.vacationRequestTotal.toLocaleString("ko-KR")}건`;
+  if (pending) pending.textContent = `${state.vacationRequestPending.toLocaleString("ko-KR")}건`;
+  if (!state.vacationRequestRows.length) {
+    const empty = element("div", "empty-state");
+    empty.append(icon("✓", "empty-icon"), element("strong", "", "표시할 휴가 요청이 없습니다."), element("span", "", "학생을 선택해 새 휴가 요청을 등록해보세요."));
+    list.append(empty);
+    return;
+  }
+  const operationLabel = { CREATE: "등록 요청", UPDATE: "수정 요청", DELETE: "휴지통 요청" };
+  state.vacationRequestRows.forEach((request) => {
+    const card = element("article", `request-card status-${String(request.status || "").toLowerCase()}`);
+    const head = element("div", "request-card-head");
+    const identity = element("div");
+    const nameButton = element("button", "student-link request-student", request.studentName || "학생");
+    nameButton.type = "button";
+    nameButton.addEventListener("click", () => openStudent(request.studentId, nameButton));
+    identity.append(nameButton, element("span", "request-kind", operationLabel[request.operation] || request.operation));
+    head.append(identity, element("span", `request-status status-${String(request.status || "").toLowerCase()}`, requestStatusLabel(request.status)));
+    const grid = element("dl", "request-grid");
+    [["시작일", request.startDate], ["종료일", request.endDate], ["기간 유형", request.periodType],
+      ["휴가 사유", request.vacationReason || "-"], ["요청자", request.requesterName], ["대상 ID", request.targetPeriodId || "신규"]]
+      .forEach(([label, value]) => grid.append(detailRow(label, value)));
+    card.append(head, grid);
+    if (request.requestReason) card.append(element("p", "request-note", `요청 사유: ${request.requestReason}`));
+    if (request.decisionMemo) card.append(element("p", "request-decision", `처리 메모: ${request.decisionMemo}`));
+    card.append(element("p", "request-meta", `${request.createdAt || ""}${request.processedAt ? ` · 처리 ${request.processedAt}` : ""}`));
+    if (request.status === "PENDING") {
+      const actions = element("div", "request-actions");
+      if (state.vacationRequestCanApprove) {
+        const reject = element("button", "danger-button", "반려");
+        const approve = element("button", "approve-button", request.operation === "DELETE" ? "승인·휴지통" : "승인·반영");
+        reject.type = approve.type = "button";
+        reject.addEventListener("click", () => decideVacationRequest(request, "REJECT", reject));
+        approve.addEventListener("click", () => decideVacationRequest(request, "APPROVE", approve));
+        actions.append(reject, approve);
+      } else {
+        const cancel = element("button", "danger-button", "요청 취소");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => cancelVacationRequest(request, cancel));
+        actions.append(cancel);
+      }
+      card.append(actions);
+    }
+    list.append(card);
+  });
+}
+
+async function decideVacationRequest(request, decision, button) {
+  const actionText = decision === "APPROVE" ? "승인하여 휴가 원장에 반영" : "반려";
+  if (!window.confirm(`${request.studentName} 학생의 휴가 요청을 ${actionText}할까요?`)) return;
+  const memo = window.prompt("처리 메모가 있으면 입력해주세요. (선택)", "");
+  if (memo === null) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc("decide_vacation_request", {
+    p_request_id: request.requestId,
+    p_decision: decision,
+    p_memo: memo.trim() || null,
+  });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    await loadVacationRequests();
+    return;
+  }
+  showNotice(decision === "APPROVE" ? "승인한 내용이 휴가 원장과 변경 이력에 반영되었습니다." : "휴가 요청을 반려했습니다.", "success");
+  await Promise.all([loadVacationRequests(), loadVacationPeriods()]);
+}
+
+async function cancelVacationRequest(request, button) {
+  if (!window.confirm("아직 승인되지 않은 이 휴가 요청을 취소할까요?")) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc("cancel_my_vacation_request", { p_request_id: request.requestId });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  showNotice("휴가 요청을 취소했습니다.", "success");
+  await loadVacationRequests();
+}
+
+async function requestVacationDelete(period, button) {
+  if (!window.confirm(`${period.startDate} ~ ${period.endDate} 휴가를 휴지통으로 이동 요청할까요?`)) return;
+  const reason = window.prompt("휴지통 이동 사유를 입력해주세요.", "기간 관리 화면에서 삭제");
+  if (reason === null || !reason.trim()) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc("submit_vacation_request", {
+    p_operation: "DELETE",
+    p_student_id: state.vacationStudentId,
+    p_period_id: period.periodId,
+    p_start_date: null,
+    p_end_date: null,
+    p_vacation_reason: null,
+    p_request_reason: reason.trim(),
+    p_idempotency_key: crypto.randomUUID(),
+  });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  showNotice("휴지통 이동 승인 요청을 등록했습니다.", "success");
+  await loadVacationRequests();
+}
+
+async function openVacationRequestModal(period = null) {
+  const isEdit = Boolean(period?.periodId);
+  if (!hasPermission("STUDENT_VACATION")) {
+    showNotice("이 계정에는 학생 휴가 권한이 없습니다.", "error");
+    return;
+  }
+  if (!state.vacationStudents.length) {
+    try {
+      state.vacationStudents = await loadRequestStudentOptions();
+      state.vacationReady = true;
+    } catch (error) {
+      showNotice(normalizeError(error), "error");
+      return;
+    }
+  }
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  const selectedStudentId = period?.studentId || state.vacationStudentId || "";
+  const backdrop = element("div", "modal-backdrop");
+  const dialog = element("section", "student-modal vacation-request-modal");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "vacation-request-modal-title");
+  const header = element("header", "modal-header");
+  const titleWrap = element("div", "modal-title-wrap");
+  titleWrap.append(icon("☀", "modal-title-icon vacation-icon"));
+  const titles = element("div");
+  const title = element("h2", "modal-title", isEdit ? "휴가 기간 수정 요청" : "휴가 등록 요청");
+  title.id = "vacation-request-modal-title";
+  titles.append(title, element("p", "modal-student-name vacation-copy", "승인 전에는 휴가 원장이 변경되지 않습니다."));
+  titleWrap.append(titles);
+  const close = element("button", "modal-close", "×");
+  close.type = "button";
+  close.setAttribute("aria-label", "닫기");
+  header.append(titleWrap, close);
+
+  const form = element("form", "request-form");
+  const field = (labelText, control, wide = false) => {
+    const wrap = element("label", wide ? "request-field field-wide" : "request-field");
+    wrap.append(element("span", "field-label", labelText), control);
+    return wrap;
+  };
+  const student = element("select", "text-input");
+  student.required = true;
+  const placeholder = element("option", "", "학생 선택");
+  placeholder.value = "";
+  placeholder.disabled = true;
+  placeholder.selected = !selectedStudentId;
+  student.append(placeholder);
+  state.vacationStudents.forEach((item) => {
+    const option = element("option", "", `${item.studentName} · ${item.gradeLabel || "학년 미지정"}`);
+    option.value = item.studentId;
+    option.selected = item.studentId === selectedStudentId;
+    student.append(option);
+  });
+  if (isEdit) student.disabled = true;
+  const startDate = element("input", "text-input");
+  startDate.type = "date";
+  startDate.required = true;
+  startDate.value = period?.startDate || today;
+  const endDate = element("input", "text-input");
+  endDate.type = "date";
+  endDate.required = true;
+  endDate.value = period?.endDate || today;
+  const vacationReason = element("input", "text-input");
+  vacationReason.type = "text";
+  vacationReason.maxLength = 300;
+  vacationReason.placeholder = "예: 가족여행, 병가";
+  vacationReason.value = period?.reason || "";
+  const requestReason = element("textarea", "text-area");
+  requestReason.maxLength = 500;
+  requestReason.placeholder = isEdit ? "수정 요청 사유 (선택)" : "승인 요청 메모 (선택)";
+  const fields = element("div", "request-form-grid");
+  fields.append(field("학생", student, true), field("휴가 시작일", startDate), field("휴가 종료일", endDate),
+    field("휴가 사유", vacationReason, true), field("요청 메모", requestReason, true));
+  const footer = element("footer", "modal-footer request-form-footer");
+  const cancel = element("button", "secondary-button", "취소");
+  cancel.type = "button";
+  const submit = element("button", "vacation-action-button", isEdit ? "수정 승인 요청" : "등록 승인 요청");
+  submit.type = "submit";
+  footer.append(cancel, submit);
+  form.append(fields, footer);
+  dialog.append(header, form);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+  document.body.classList.add("modal-open");
+  const idempotencyKey = crypto.randomUUID();
+  const dismiss = () => {
+    backdrop.remove();
+    document.body.classList.remove("modal-open");
+  };
+  close.addEventListener("click", dismiss);
+  cancel.addEventListener("click", dismiss);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) dismiss(); });
+  dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") dismiss(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (startDate.value > endDate.value) {
+      const inline = form.querySelector(".form-error") || element("p", "form-error");
+      inline.textContent = "휴가 종료일은 시작일보다 빠를 수 없습니다.";
+      if (!inline.parentNode) form.insertBefore(inline, footer);
+      return;
+    }
+    submit.disabled = true;
+    submit.textContent = "요청 저장 중…";
+    const { error } = await supabase.rpc("submit_vacation_request", {
+      p_operation: isEdit ? "UPDATE" : "CREATE",
+      p_student_id: student.value,
+      p_period_id: period?.periodId || null,
+      p_start_date: startDate.value,
+      p_end_date: endDate.value,
+      p_vacation_reason: vacationReason.value.trim() || null,
+      p_request_reason: requestReason.value.trim() || null,
+      p_idempotency_key: idempotencyKey,
+    });
+    submit.disabled = false;
+    submit.textContent = isEdit ? "수정 승인 요청" : "등록 승인 요청";
+    if (error) {
+      const inline = form.querySelector(".form-error") || element("p", "form-error");
+      inline.textContent = normalizeError(error);
+      if (!inline.parentNode) form.insertBefore(inline, footer);
+      return;
+    }
+    state.vacationStudentId = student.value;
+    dismiss();
+    document.querySelector("#vacation-tab")?.click();
+    showNotice(isEdit ? "휴가 수정 승인 요청을 등록했습니다." : "휴가 등록 승인 요청을 등록했습니다.", "success");
+  });
+  student.focus();
+}
+
 function renderRows() {
   const tbody = document.querySelector("#student-rows");
   const empty = document.querySelector("#empty-state");
@@ -1381,6 +1834,17 @@ async function openStudent(studentId, returnFocus) {
   const footer = element("footer", "modal-footer");
   const closeBottom = element("button", "secondary-button", "닫기");
   closeBottom.type = "button";
+  footer.append(closeBottom);
+  if (hasPermission("STUDENT_VACATION")) {
+    const vacation = element("button", "vacation-action-button", "휴가 관리");
+    vacation.type = "button";
+    vacation.addEventListener("click", () => {
+      state.vacationStudentId = studentId;
+      dismiss();
+      document.querySelector("#vacation-tab")?.click();
+    });
+    footer.append(vacation);
+  }
   if (state.studentReference?.canEdit) {
     const edit = element("button", "primary-action-button", "학생 정보 수정 요청");
     edit.type = "button";
@@ -1388,9 +1852,7 @@ async function openStudent(studentId, returnFocus) {
       dismiss();
       openStudentRequestModal(studentId);
     });
-    footer.append(closeBottom, edit);
-  } else {
-    footer.append(closeBottom);
+    footer.append(edit);
   }
   dialog.append(header, details, schedule, paymentAction, paymentHistory, footer);
   backdrop.append(dialog);
