@@ -59,7 +59,9 @@ const context = vm.createContext({
   SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
   ScriptApp: { EventType: { ON_CHANGE: 'ON_CHANGE', CLOCK: 'CLOCK' }, getProjectTriggers: () => [] }
 });
-const sourceFiles = fs.readdirSync(root).filter(name => name.endsWith('.js')).sort();
+const sourceFiles = fs.readdirSync(root)
+  .filter(name => name.endsWith('.js') && name !== 'vite.config.js')
+  .sort();
 sourceFiles.forEach(name => new vm.Script(fs.readFileSync(path.join(root, name), 'utf8'), { filename: name }).runInContext(context));
 const dashboardPaymentHtml = fs.readFileSync(path.join(root, 'DashboardPaymentModule.html'), 'utf8');
 const dashboardCoreHtml = fs.readFileSync(path.join(root, 'DashboardCoreModule.html'), 'utf8');

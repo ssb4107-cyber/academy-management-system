@@ -1,0 +1,19 @@
+{
+  "name": "academy-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:security": "node tests/repository-security.test.cjs",
+    "test": "node tests/repository-security.test.cjs && node tests/static-audit.cjs && node tests/p2-integrity.test.cjs && node tests/glossary.test.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.3"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
+  }
+}

@@ -23,6 +23,11 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
+          cache: npm
+      - name: 웹 의존성 설치
+        run: npm ci
+      - name: 공개 화면 빌드
+        run: npm run build
       - name: 저장소 비밀값 검사
         run: node tests/repository-security.test.cjs
       - name: 정적 검사

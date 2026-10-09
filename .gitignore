@@ -13,6 +13,7 @@
 
 # Generated or local-only folders
 node_modules/
+dist/
 coverage/
 .agents/
 .codex/
@@ -34,4 +35,3 @@ supabase/.temp/
 *.xlsx
 *.zip
 *.bak
-

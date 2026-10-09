@@ -10,7 +10,9 @@ const root = path.resolve(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'appsscript.json'), 'utf8'));
 assert.equal(manifest.webapp?.executeAs, 'USER_DEPLOYING', '웹앱은 배포자 권한으로 실행');
 assert.equal(manifest.webapp?.access, 'ANYONE_ANONYMOUS', '공개 웹앱은 앱 자체 Google 인증을 사용');
-const jsFiles = fs.readdirSync(root).filter(name => name.endsWith('.js')).sort();
+const jsFiles = fs.readdirSync(root)
+  .filter(name => name.endsWith('.js') && name !== 'vite.config.js')
+  .sort();
 const htmlFiles = fs.readdirSync(root).filter(name => name.endsWith('.html')).sort();
 const definitions = new Map();
 const definitionSources = new Map();

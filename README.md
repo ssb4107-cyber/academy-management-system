@@ -1,23 +1,25 @@
 # 학원관리시스템
 
-Google Apps Script, Supabase, GitHub를 역할별로 분리한 학원 운영 시스템입니다.
+Google Apps Script에서 Supabase + GitHub Pages 구조로 단계적으로 이전 중인 학원 운영 시스템입니다.
 
 ## 역할 분리
 
-- Google Apps Script: 현재 운영 화면과 Google 스프레드시트 원본
-- Supabase: 비공개 데이터 미러와 이후 이전할 서버 처리
-- GitHub: 소스 코드, 테스트, 변경 이력만 보관
+- GitHub Pages: 로그인과 학생 조회를 시작으로 이전되는 공개 화면
+- Supabase: 로그인, 비공개 데이터, 사용자별 접근 권한, 서버 조회 함수
+- Google Apps Script: 이전이 끝날 때까지 유지하는 현재 운영·검증 경로
 
-학생 데이터, 스프레드시트 ID, 배포 ID, 인증키와 환경파일은 GitHub에 저장하지 않습니다.
+학생 데이터, 스프레드시트 ID, 배포 ID, 비밀키와 환경파일은 GitHub에 저장하지 않습니다. 브라우저용 Supabase 공개 키만 소스에 포함되며 실제 데이터 권한은 로그인 JWT와 서버 함수가 결정합니다.
+
+## 새 공개 화면
+
+등록된 이메일로 로그인 링크를 받은 뒤 학생 목록을 조회할 수 있습니다. 학생 이름을 누르면 기존 대시보드와 같은 정보 항목을 균형 잡힌 상세 모달로 표시합니다. 익명 사용자와 미등록 계정은 서버에서 차단됩니다.
 
 ## 로컬 검사
 
 ```text
-node tests/repository-security.test.cjs
-node tests/static-audit.cjs
-node tests/p2-integrity.test.cjs
-node tests/glossary.test.cjs
+npm ci
+npm run build
+npm test
 ```
 
 배포는 검사를 통과한 코드만 별도 승인된 로컬 환경에서 수행합니다. GitHub Actions에는 운영 비밀값을 넣지 않습니다.
-
