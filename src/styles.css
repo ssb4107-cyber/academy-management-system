@@ -65,7 +65,7 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .quiet-button:hover { border-color: #9eb8de; color: var(--blue); }
 
 .content { width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 72px; }
-.view-switcher { display: inline-flex; gap: 5px; margin-bottom: 32px; padding: 5px; border: 1px solid var(--line); border-radius: 13px; background: #edf1f7; }
+.view-switcher { display: flex; width: fit-content; max-width: 100%; gap: 5px; margin-bottom: 32px; padding: 5px; overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; background: #edf1f7; }
 .view-tab { min-width: 108px; padding: 10px 16px; border: 0; border-radius: 9px; color: #657187; background: transparent; font-size: 13px; font-weight: 800; }
 .view-tab.active { color: #145fc8; background: white; box-shadow: 0 3px 10px rgba(31, 53, 85, 0.1); }
 .view-section[hidden] { display: none; }
@@ -79,6 +79,9 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .vacation-eyebrow { color: #b36b00; }
 .vacation-action-button { min-height: 42px; padding: 0 17px; border: 0; border-radius: 10px; color: #fff; background: #e69a12; font-weight: 850; box-shadow: 0 8px 18px rgba(230,154,18,0.2); }
 .vacation-action-button:hover { background: #c98000; }
+.sibling-eyebrow { color: #6d3db1; }
+.sibling-action-button { min-height: 42px; padding: 0 17px; border: 0; border-radius: 10px; color: #fff; background: #7048ad; font-weight: 850; box-shadow: 0 8px 18px rgba(91,65,145,0.2); }
+.sibling-action-button:hover { background: #5b368f; }
 .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 30px; }
 .stat-card { min-height: 112px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: white; }
 .stat-card.accent { color: white; border-color: transparent; background: linear-gradient(130deg, #1d6fe9, #2862bb); box-shadow: 0 12px 28px rgba(29, 111, 233, 0.2); }
@@ -197,6 +200,31 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .vacation-period-actions { display: flex; align-items: center; gap: 8px; }
 .vacation-managed { color: #7a8598; font-size: 12px; font-weight: 750; }
 
+.sibling-toolbar { align-items: center; }
+.sibling-toolbar-title { color: var(--navy); font-size: 14px; white-space: nowrap; }
+.sibling-group-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; padding: 18px; }
+.sibling-group-card { overflow: hidden; border: 1px solid #e3e0eb; border-radius: 14px; background: #fdfcff; transition: 0.2s; }
+.sibling-group-card.focused { border-color: #8d65c5; box-shadow: 0 0 0 4px rgba(112,72,173,0.12); }
+.sibling-group-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid #ece8f2; background: #f7f3fc; }
+.sibling-group-name, .sibling-group-count { display: block; }
+.sibling-group-name { color: #34204f; font-size: 16px; }
+.sibling-group-count { margin-top: 4px; color: #7c6c91; font-size: 11px; }
+.sibling-group-actions, .sibling-member-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.sibling-member-list { display: grid; }
+.sibling-member-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 11px 14px; padding: 14px 16px; border-top: 1px solid #f0edf4; }
+.sibling-member-row:first-child { border-top: 0; }
+.sibling-member-student { min-width: 0; }
+.sibling-member-meta { display: block; margin-top: 5px; overflow: hidden; color: #7a7287; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.sibling-discount { color: #7048ad; font-size: 13px; white-space: nowrap; }
+.sibling-member-actions { grid-column: 1 / -1; }
+.sibling-request-modal { width: min(100%,720px); }
+.compact-modal { width: min(100%,620px); }
+.sibling-request-modal .field-wide { grid-column: 1 / -1; }
+.sibling-icon { color: #7048ad; background: #f0e9fa; }
+.sibling-copy { color: #7048ad; }
+.sibling-student-multiselect { height: 280px; padding: 8px; }
+.sibling-student-multiselect option { padding: 8px 10px; border-radius: 7px; }
+
 .payment-request-modal { width: min(100%, 760px); }
 .student-request-modal { width: min(100%, 820px); }
 .request-form { padding: 0; }
@@ -241,8 +269,12 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .request-field:nth-last-child(-n+2) { grid-column: auto; }
   .student-request-modal .field-wide { grid-column: auto; }
   .vacation-request-modal .field-wide { grid-column: auto; }
+  .sibling-request-modal .field-wide { grid-column: auto; }
   .vacation-period-item { grid-template-columns: 1fr; }
   .vacation-period-actions { justify-content: flex-start; }
+  .sibling-group-list { grid-template-columns: 1fr; }
+  .sibling-group-head { flex-direction: column; }
+  .sibling-group-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 460px) {

@@ -48,6 +48,15 @@ const state = {
   vacationRequestStatus: "",
   vacationRequestCanApprove: false,
   vacationReady: false,
+  siblingStudents: [],
+  siblingGroups: [],
+  siblingRequestRows: [],
+  siblingRequestTotal: 0,
+  siblingRequestPending: 0,
+  siblingRequestStatus: "",
+  siblingRequestCanApprove: false,
+  siblingFocusStudentId: "",
+  siblingReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -184,17 +193,20 @@ function renderApp(sessionData) {
   const requestTab = element("button", "view-tab", "수납 요청");
   const studentRequestTab = element("button", "view-tab", "학생 요청");
   const vacationTab = element("button", "view-tab", "휴가 관리");
+  const siblingTab = element("button", "view-tab", "형제 관리");
   studentTab.id = "student-tab";
   paymentTab.id = "payment-tab";
   requestTab.id = "request-tab";
   studentRequestTab.id = "student-request-tab";
   vacationTab.id = "vacation-tab";
+  siblingTab.id = "sibling-tab";
   studentTab.type = "button";
   paymentTab.type = "button";
   requestTab.type = "button";
   studentRequestTab.type = "button";
   vacationTab.type = "button";
-  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab);
+  siblingTab.type = "button";
+  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab);
   main.append(viewSwitcher);
 
   const studentView = element("div", "view-section");
@@ -272,7 +284,9 @@ function renderApp(sessionData) {
   studentRequestView.hidden = true;
   const vacationView = createVacationView();
   vacationView.hidden = true;
-  main.append(studentView, paymentView, requestView, studentRequestView, vacationView);
+  const siblingView = createSiblingView();
+  siblingView.hidden = true;
+  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -301,11 +315,13 @@ function renderApp(sessionData) {
     requestView.hidden = true;
     studentRequestView.hidden = true;
     vacationView.hidden = true;
+    siblingView.hidden = true;
     studentTab.classList.add("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
+    siblingTab.classList.remove("active");
     showNotice("");
   });
   paymentTab.addEventListener("click", async () => {
@@ -314,11 +330,13 @@ function renderApp(sessionData) {
     requestView.hidden = true;
     studentRequestView.hidden = true;
     vacationView.hidden = true;
+    siblingView.hidden = true;
     paymentTab.classList.add("active");
     studentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
+    siblingTab.classList.remove("active");
     showNotice("");
     if (!state.paymentReady) {
       const ready = await loadPaymentOverview();
@@ -331,11 +349,13 @@ function renderApp(sessionData) {
     requestView.hidden = false;
     studentRequestView.hidden = true;
     vacationView.hidden = true;
+    siblingView.hidden = true;
     requestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
+    siblingTab.classList.remove("active");
     showNotice("");
     await loadPaymentRequests();
   });
@@ -345,11 +365,13 @@ function renderApp(sessionData) {
     requestView.hidden = true;
     studentRequestView.hidden = false;
     vacationView.hidden = true;
+    siblingView.hidden = true;
     studentRequestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     vacationTab.classList.remove("active");
+    siblingTab.classList.remove("active");
     showNotice("");
     await loadStudentRequests();
   });
@@ -359,13 +381,31 @@ function renderApp(sessionData) {
     requestView.hidden = true;
     studentRequestView.hidden = true;
     vacationView.hidden = false;
+    siblingView.hidden = true;
     vacationTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
+    siblingTab.classList.remove("active");
     showNotice("");
     await loadVacationWorkspace();
+  });
+  siblingTab.addEventListener("click", async () => {
+    studentView.hidden = true;
+    paymentView.hidden = true;
+    requestView.hidden = true;
+    studentRequestView.hidden = true;
+    vacationView.hidden = true;
+    siblingView.hidden = false;
+    siblingTab.classList.add("active");
+    studentTab.classList.remove("active");
+    paymentTab.classList.remove("active");
+    requestTab.classList.remove("active");
+    studentRequestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
+    showNotice("");
+    await loadSiblingWorkspace();
   });
 }
 
@@ -1262,6 +1302,457 @@ async function openStudentRequestModal(studentId = null) {
   name.focus();
 }
 
+function createSiblingView() {
+  const view = element("div", "view-section");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow sibling-eyebrow", "SIBLING MANAGEMENT"));
+  title.append(element("h1", "page-title", "형제·자매 관계 관리"));
+  title.append(element("p", "page-copy", "가족 그룹과 월별 할인액을 확인하고 변경 승인을 요청할 수 있습니다."));
+  const createButton = element("button", "sibling-action-button", "+ 가족 그룹 설정 요청");
+  createButton.type = "button";
+  createButton.hidden = !hasPermission("SIBLING_MANAGER");
+  createButton.addEventListener("click", () => openSiblingGroupModal());
+  heading.append(title, createButton);
+  view.append(heading);
+
+  const stats = element("section", "stats-grid");
+  const groupStat = createStat("형제 그룹", "0개", true);
+  groupStat.querySelector(".stat-value").id = "sibling-group-total";
+  const studentStat = createStat("그룹 소속 학생", "0명");
+  studentStat.querySelector(".stat-value").id = "sibling-student-total";
+  const pendingStat = createStat("승인 대기", "0건");
+  pendingStat.querySelector(".stat-value").id = "sibling-request-pending";
+  stats.append(groupStat, studentStat, pendingStat);
+  view.append(stats);
+
+  const groupPanel = element("section", "student-panel sibling-group-panel");
+  const groupToolbar = element("div", "toolbar sibling-toolbar");
+  groupToolbar.append(
+    element("strong", "sibling-toolbar-title", "등록된 가족 그룹"),
+    element("p", "request-toolbar-copy", "관계를 해제하면 해당 학생의 형제 할인도 0원으로 종료됩니다.")
+  );
+  const refresh = element("button", "quiet-button", "그룹 새로고침");
+  refresh.type = "button";
+  refresh.addEventListener("click", loadSiblingWorkspace);
+  groupToolbar.append(refresh);
+  groupPanel.append(groupToolbar);
+  const groups = element("div", "sibling-group-list");
+  groups.id = "sibling-group-list";
+  groupPanel.append(groups);
+  view.append(groupPanel);
+
+  const requestPanel = element("section", "student-panel request-panel");
+  const requestToolbar = element("div", "toolbar request-toolbar");
+  const description = element("p", "request-toolbar-copy", "그룹·할인 변경은 승인 후 학생 정보와 계산 기준에 반영됩니다.");
+  const status = element("select", "status-select");
+  status.setAttribute("aria-label", "형제 관리 요청 상태 필터");
+  [["", "전체 상태"], ["PENDING", "승인 대기"], ["APPROVED", "승인 완료"], ["REJECTED", "반려"], ["CANCELLED", "취소"]]
+    .forEach(([value, labelText]) => {
+      const option = element("option", "", labelText);
+      option.value = value;
+      option.selected = value === state.siblingRequestStatus;
+      status.append(option);
+    });
+  status.addEventListener("change", async () => {
+    state.siblingRequestStatus = status.value;
+    await loadSiblingRequests();
+  });
+  const requestRefresh = element("button", "quiet-button", "요청 새로고침");
+  requestRefresh.type = "button";
+  requestRefresh.addEventListener("click", loadSiblingRequests);
+  requestToolbar.append(description, status, requestRefresh);
+  requestPanel.append(requestToolbar);
+  const requests = element("div", "request-list");
+  requests.id = "sibling-request-list";
+  requestPanel.append(requests);
+  view.append(requestPanel);
+  return view;
+}
+
+async function loadSiblingWorkspace() {
+  const { data, error } = await supabase.rpc("get_my_sibling_workspace");
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.siblingStudents = Array.isArray(data?.students) ? data.students : [];
+  state.siblingGroups = Array.isArray(data?.groups) ? data.groups : [];
+  state.siblingRequestCanApprove = data?.canApprove === true;
+  state.siblingReady = true;
+  renderSiblingGroups();
+  await loadSiblingRequests();
+}
+
+function renderSiblingGroups() {
+  const list = document.querySelector("#sibling-group-list");
+  if (!list) return;
+  list.replaceChildren();
+  const groupedCount = state.siblingGroups.reduce((sum, group) => sum + (Array.isArray(group.members) ? group.members.length : 0), 0);
+  const groupTotal = document.querySelector("#sibling-group-total");
+  const studentTotal = document.querySelector("#sibling-student-total");
+  if (groupTotal) groupTotal.textContent = `${state.siblingGroups.length.toLocaleString("ko-KR")}개`;
+  if (studentTotal) studentTotal.textContent = `${groupedCount.toLocaleString("ko-KR")}명`;
+  if (!state.siblingGroups.length) {
+    list.append(element("p", "vacation-empty", "등록된 형제·자매 그룹이 없습니다."));
+    return;
+  }
+  let focusCard = null;
+  state.siblingGroups.forEach((group) => {
+    const members = Array.isArray(group.members) ? group.members : [];
+    const card = element("article", "sibling-group-card");
+    card.dataset.groupId = group.groupId || "";
+    const head = element("header", "sibling-group-head");
+    const identity = element("div");
+    identity.append(
+      element("strong", "sibling-group-name", group.groupName || "이름 없는 가족"),
+      element("span", "sibling-group-count", `${members.length}명 · ${group.groupId || "그룹 ID 없음"}`)
+    );
+    const actions = element("div", "sibling-group-actions");
+    if (hasPermission("SIBLING_MANAGER")) {
+      const rename = element("button", "table-action-button", "그룹명 변경");
+      const ungroupAll = element("button", "danger-button compact", "전체 해제 요청");
+      rename.type = ungroupAll.type = "button";
+      rename.addEventListener("click", () => openSiblingGroupModal(group));
+      ungroupAll.addEventListener("click", () => submitSiblingUngroup(members.map((member) => member.studentId), group.groupName || "가족 그룹"));
+      actions.append(rename, ungroupAll);
+    }
+    head.append(identity, actions);
+    const memberList = element("div", "sibling-member-list");
+    members.forEach((member) => {
+      const row = element("div", "sibling-member-row");
+      const student = element("div", "sibling-member-student");
+      const name = element("button", "student-link", member.studentName || "학생");
+      name.type = "button";
+      name.addEventListener("click", () => openStudent(member.studentId, name));
+      student.append(name, element("span", "sibling-member-meta", `${member.gradeLabel || "학년 미지정"} · ${member.teacherName || "담당 미지정"} · ${member.status || "상태 미지정"}`));
+      const discount = element("strong", "sibling-discount", `할인 ${formatMoney(member.siblingDiscount)}`);
+      const memberActions = element("div", "sibling-member-actions");
+      if (hasPermission("SIBLING_MANAGER")) {
+        const editDiscount = element("button", "table-action-button", "할인 변경");
+        const ungroup = element("button", "danger-button compact", "관계 해제");
+        editDiscount.type = ungroup.type = "button";
+        editDiscount.addEventListener("click", () => openSiblingDiscountModal(member));
+        ungroup.addEventListener("click", () => submitSiblingUngroup([member.studentId], member.studentName || "학생"));
+        memberActions.append(editDiscount, ungroup);
+      }
+      row.append(student, discount, memberActions);
+      memberList.append(row);
+      if (member.studentId === state.siblingFocusStudentId) focusCard = card;
+    });
+    card.append(head, memberList);
+    list.append(card);
+  });
+  if (state.siblingFocusStudentId) {
+    if (focusCard) {
+      focusCard.classList.add("focused");
+      window.setTimeout(() => focusCard.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+    } else {
+      showNotice("현재 형제 그룹에 등록되지 않은 학생입니다.");
+    }
+    state.siblingFocusStudentId = "";
+  }
+}
+
+async function loadSiblingRequests() {
+  const { data, error } = await supabase.rpc("search_my_sibling_requests", {
+    p_status: state.siblingRequestStatus || null,
+    p_limit: 200,
+    p_offset: 0,
+  });
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.siblingRequestRows = Array.isArray(data?.rows) ? data.rows : [];
+  state.siblingRequestTotal = Number(data?.total || 0);
+  state.siblingRequestPending = Number(data?.pending || 0);
+  state.siblingRequestCanApprove = data?.canApprove === true;
+  renderSiblingRequests();
+}
+
+function renderSiblingRequests() {
+  const list = document.querySelector("#sibling-request-list");
+  if (!list) return;
+  list.replaceChildren();
+  const pending = document.querySelector("#sibling-request-pending");
+  if (pending) pending.textContent = `${state.siblingRequestPending.toLocaleString("ko-KR")}건`;
+  if (!state.siblingRequestRows.length) {
+    const empty = element("div", "empty-state");
+    empty.append(icon("✓", "empty-icon"), element("strong", "", "표시할 형제 관리 요청이 없습니다."), element("span", "", "새 그룹이나 할인 변경 요청을 등록해보세요."));
+    list.append(empty);
+    return;
+  }
+  const operationLabel = { GROUP: "가족 그룹 설정", UNGROUP: "형제 관계 해제", DISCOUNT: "형제 할인 변경" };
+  state.siblingRequestRows.forEach((request) => {
+    const ids = Array.isArray(request.studentIds) ? request.studentIds : [];
+    const names = request.studentNames && typeof request.studentNames === "object" ? request.studentNames : {};
+    const studentNames = ids.map((id) => names[id] || id).join(", ");
+    const card = element("article", `request-card status-${String(request.status || "").toLowerCase()}`);
+    const head = element("div", "request-card-head");
+    const identity = element("div");
+    identity.append(element("strong", "request-student-name", studentNames || "대상 학생"), element("span", "request-kind", operationLabel[request.operation] || request.operation));
+    head.append(identity, element("span", `request-status status-${String(request.status || "").toLowerCase()}`, requestStatusLabel(request.status)));
+    const grid = element("dl", "request-grid");
+    [["그룹명", request.groupName || "-"], ["할인액", request.operation === "DISCOUNT" ? formatMoney(request.discountAmount) : "-"],
+      ["적용 월", request.effectiveMonth || "-"], ["요청자", request.requesterName], ["대상 인원", `${ids.length}명`]]
+      .forEach(([label, value]) => grid.append(detailRow(label, value)));
+    card.append(head, grid);
+    if (request.requestReason) card.append(element("p", "request-note", `요청 사유: ${request.requestReason}`));
+    if (request.decisionMemo) card.append(element("p", "request-decision", `처리 메모: ${request.decisionMemo}`));
+    card.append(element("p", "request-meta", `${request.createdAt || ""}${request.processedAt ? ` · 처리 ${request.processedAt}` : ""}`));
+    if (request.status === "PENDING") {
+      const actions = element("div", "request-actions");
+      if (state.siblingRequestCanApprove) {
+        const reject = element("button", "danger-button", "반려");
+        const approve = element("button", "approve-button", "승인·반영");
+        reject.type = approve.type = "button";
+        reject.addEventListener("click", () => decideSiblingRequest(request, "REJECT", reject));
+        approve.addEventListener("click", () => decideSiblingRequest(request, "APPROVE", approve));
+        actions.append(reject, approve);
+      } else {
+        const cancel = element("button", "danger-button", "요청 취소");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => cancelSiblingRequest(request, cancel));
+        actions.append(cancel);
+      }
+      card.append(actions);
+    }
+    list.append(card);
+  });
+}
+
+async function decideSiblingRequest(request, decision, button) {
+  const action = decision === "APPROVE" ? "승인하여 학생 정보와 계산 기준에 반영" : "반려";
+  if (!window.confirm(`이 형제 관리 요청을 ${action}할까요?`)) return;
+  const memo = window.prompt("처리 메모가 있으면 입력해주세요. (선택)", "");
+  if (memo === null) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc("decide_sibling_request", {
+    p_request_id: request.requestId,
+    p_decision: decision,
+    p_memo: memo.trim() || null,
+  });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    await loadSiblingRequests();
+    return;
+  }
+  showNotice(decision === "APPROVE" ? "형제 관리 요청을 승인하고 변경 이력에 반영했습니다." : "형제 관리 요청을 반려했습니다.", "success");
+  await loadSiblingWorkspace();
+}
+
+async function cancelSiblingRequest(request, button) {
+  if (!window.confirm("아직 승인되지 않은 이 형제 관리 요청을 취소할까요?")) return;
+  button.disabled = true;
+  const { error } = await supabase.rpc("cancel_my_sibling_request", { p_request_id: request.requestId });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  showNotice("형제 관리 요청을 취소했습니다.", "success");
+  await loadSiblingRequests();
+}
+
+async function submitSiblingUngroup(studentIds, label) {
+  if (!hasPermission("SIBLING_MANAGER")) return;
+  if (!window.confirm(`${label}의 형제 관계 해제를 승인 요청할까요? 남은 구성원이 한 명이면 함께 해제됩니다.`)) return;
+  const reason = window.prompt("관계 해제 사유를 입력해주세요. (선택)", "");
+  if (reason === null) return;
+  const { error } = await supabase.rpc("submit_sibling_request", {
+    p_operation: "UNGROUP",
+    p_student_ids: studentIds,
+    p_group_name: null,
+    p_discount_amount: null,
+    p_effective_month: null,
+    p_request_reason: reason.trim() || null,
+    p_idempotency_key: crypto.randomUUID(),
+  });
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  showNotice("형제 관계 해제 승인 요청을 등록했습니다.", "success");
+  await loadSiblingRequests();
+}
+
+async function openSiblingGroupModal(group = null) {
+  if (!hasPermission("SIBLING_MANAGER")) return;
+  if (!state.siblingReady) await loadSiblingWorkspace();
+  const members = Array.isArray(group?.members) ? group.members : [];
+  const fixedIds = members.map((member) => member.studentId);
+  const backdrop = element("div", "modal-backdrop");
+  const dialog = element("section", "student-modal sibling-request-modal");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  const header = element("header", "modal-header");
+  const titleWrap = element("div", "modal-title-wrap");
+  titleWrap.append(icon("♣", "modal-title-icon sibling-icon"));
+  const titles = element("div");
+  titles.append(element("h2", "modal-title", group ? "가족 그룹명 변경 요청" : "가족 그룹 설정 요청"), element("p", "modal-student-name sibling-copy", "승인 전에는 학생 관계가 변경되지 않습니다."));
+  titleWrap.append(titles);
+  const close = element("button", "modal-close", "×");
+  close.type = "button";
+  header.append(titleWrap, close);
+  const form = element("form", "request-form");
+  const fields = element("div", "request-form-grid");
+  const name = element("input", "text-input");
+  name.type = "text";
+  name.required = true;
+  name.maxLength = 40;
+  name.value = group?.groupName || "";
+  name.placeholder = "예: 김온유네";
+  const nameField = element("label", "request-field field-wide");
+  nameField.append(element("span", "field-label", "가족 그룹명"), name);
+  const students = element("select", "text-input sibling-student-multiselect");
+  students.multiple = true;
+  students.size = 12;
+  const sourceStudents = group ? members : state.siblingStudents;
+  sourceStudents.forEach((student) => {
+    const option = element("option", "", `${student.studentName} · ${student.gradeLabel || "학년 미지정"} · ${student.groupName || "그룹 없음"}`);
+    option.value = student.studentId;
+    option.selected = fixedIds.includes(student.studentId);
+    students.append(option);
+  });
+  if (group) students.disabled = true;
+  const studentField = element("label", "request-field field-wide");
+  studentField.append(element("span", "field-label", group ? "현재 구성원" : "학생 선택 · Ctrl 또는 Command로 여러 명 선택"), students);
+  const reason = element("textarea", "text-area");
+  reason.maxLength = 500;
+  reason.placeholder = "승인 요청 메모 (선택)";
+  const reasonField = element("label", "request-field field-wide");
+  reasonField.append(element("span", "field-label", "요청 메모"), reason);
+  fields.append(nameField, studentField, reasonField);
+  const footer = element("footer", "modal-footer request-form-footer");
+  const cancel = element("button", "secondary-button", "취소");
+  cancel.type = "button";
+  const submit = element("button", "sibling-action-button", "설정 승인 요청");
+  submit.type = "submit";
+  footer.append(cancel, submit);
+  form.append(fields, footer);
+  dialog.append(header, form);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+  document.body.classList.add("modal-open");
+  const idempotencyKey = crypto.randomUUID();
+  const dismiss = () => { backdrop.remove(); document.body.classList.remove("modal-open"); };
+  close.addEventListener("click", dismiss);
+  cancel.addEventListener("click", dismiss);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) dismiss(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const selectedIds = group ? fixedIds : Array.from(students.selectedOptions).map((option) => option.value);
+    if (selectedIds.length < 2) {
+      const inline = form.querySelector(".form-error") || element("p", "form-error");
+      inline.textContent = "형제로 묶을 학생을 2명 이상 선택해주세요.";
+      if (!inline.parentNode) form.insertBefore(inline, footer);
+      return;
+    }
+    submit.disabled = true;
+    const { error } = await supabase.rpc("submit_sibling_request", {
+      p_operation: "GROUP",
+      p_student_ids: selectedIds,
+      p_group_name: name.value.trim(),
+      p_discount_amount: null,
+      p_effective_month: null,
+      p_request_reason: reason.value.trim() || null,
+      p_idempotency_key: idempotencyKey,
+    });
+    submit.disabled = false;
+    if (error) {
+      const inline = form.querySelector(".form-error") || element("p", "form-error");
+      inline.textContent = normalizeError(error);
+      if (!inline.parentNode) form.insertBefore(inline, footer);
+      return;
+    }
+    dismiss();
+    showNotice(group ? "가족 그룹명 변경 승인 요청을 등록했습니다." : "가족 그룹 설정 승인 요청을 등록했습니다.", "success");
+    await loadSiblingRequests();
+  });
+  name.focus();
+}
+
+async function openSiblingDiscountModal(member) {
+  if (!hasPermission("SIBLING_MANAGER")) return;
+  const backdrop = element("div", "modal-backdrop");
+  const dialog = element("section", "student-modal sibling-request-modal compact-modal");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  const header = element("header", "modal-header");
+  const titleWrap = element("div", "modal-title-wrap");
+  titleWrap.append(icon("₩", "modal-title-icon sibling-icon"));
+  const titles = element("div");
+  titles.append(element("h2", "modal-title", "형제 할인 변경 요청"), element("p", "modal-student-name sibling-copy", member.studentName || "학생"));
+  titleWrap.append(titles);
+  const close = element("button", "modal-close", "×");
+  close.type = "button";
+  header.append(titleWrap, close);
+  const form = element("form", "request-form");
+  const fields = element("div", "request-form-grid");
+  const amount = element("input", "text-input");
+  amount.type = "number";
+  amount.min = "0";
+  amount.max = "10000000";
+  amount.step = "1000";
+  amount.required = true;
+  amount.value = String(Number(member.siblingDiscount || 0));
+  const month = element("input", "text-input");
+  month.type = "month";
+  month.required = true;
+  month.value = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }).slice(0, 7);
+  const reason = element("textarea", "text-area");
+  reason.maxLength = 500;
+  reason.placeholder = "할인 변경 사유 (선택)";
+  const field = (label, control, wide = false) => {
+    const wrap = element("label", wide ? "request-field field-wide" : "request-field");
+    wrap.append(element("span", "field-label", label), control);
+    return wrap;
+  };
+  fields.append(field("형제 할인액", amount), field("적용 월", month), field("요청 메모", reason, true));
+  const footer = element("footer", "modal-footer request-form-footer");
+  const cancel = element("button", "secondary-button", "취소");
+  cancel.type = "button";
+  const submit = element("button", "sibling-action-button", "할인 승인 요청");
+  submit.type = "submit";
+  footer.append(cancel, submit);
+  form.append(fields, footer);
+  dialog.append(header, form);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+  document.body.classList.add("modal-open");
+  const idempotencyKey = crypto.randomUUID();
+  const dismiss = () => { backdrop.remove(); document.body.classList.remove("modal-open"); };
+  close.addEventListener("click", dismiss);
+  cancel.addEventListener("click", dismiss);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) dismiss(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    const { error } = await supabase.rpc("submit_sibling_request", {
+      p_operation: "DISCOUNT",
+      p_student_ids: [member.studentId],
+      p_group_name: null,
+      p_discount_amount: Number(amount.value),
+      p_effective_month: `${month.value}-01`,
+      p_request_reason: reason.value.trim() || null,
+      p_idempotency_key: idempotencyKey,
+    });
+    submit.disabled = false;
+    if (error) {
+      const inline = form.querySelector(".form-error") || element("p", "form-error");
+      inline.textContent = normalizeError(error);
+      if (!inline.parentNode) form.insertBefore(inline, footer);
+      return;
+    }
+    dismiss();
+    showNotice("형제 할인 변경 승인 요청을 등록했습니다.", "success");
+    await loadSiblingRequests();
+  });
+  amount.focus();
+}
+
 function createVacationView() {
   const view = element("div", "view-section");
   const heading = element("section", "page-heading");
@@ -1844,6 +2335,16 @@ async function openStudent(studentId, returnFocus) {
       document.querySelector("#vacation-tab")?.click();
     });
     footer.append(vacation);
+  }
+  if (hasPermission("SIBLING_MANAGER")) {
+    const sibling = element("button", "sibling-action-button", "형제 관리");
+    sibling.type = "button";
+    sibling.addEventListener("click", () => {
+      state.siblingFocusStudentId = studentId;
+      dismiss();
+      document.querySelector("#sibling-tab")?.click();
+    });
+    footer.append(sibling);
   }
   if (state.studentReference?.canEdit) {
     const edit = element("button", "primary-action-button", "학생 정보 수정 요청");
