@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing:border-box; }
+    body { margin:0; padding:18px; color:#202124; background:#f1f3f4; font-family:Arial,"Noto Sans KR",sans-serif; }
+    .toolbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:9px; padding:12px 14px; margin-bottom:14px; border:1px solid #dfe4ea; border-radius:10px; background:#fff; box-shadow:0 2px 8px rgba(40,64,100,.08); }
+    .toolbar-title { margin-right:auto; color:#17365d; font-size:17px; font-weight:bold; }
+    select,button { padding:8px 12px; border:1px solid #dadce0; border-radius:6px; background:#fff; font-size:13px; }
+    button { cursor:pointer; font-weight:bold; }
+    button.primary { border-color:#1a73e8; color:#fff; background:#1a73e8; }
+    button.primary:disabled { border-color:#9aa0a6; background:#9aa0a6; cursor:not-allowed; }
+    .status { min-width:110px; color:#5f6368; font-size:11px; text-align:right; }
+    .sheet { padding:24px; border-radius:10px; background:#fff; box-shadow:0 2px 9px rgba(40,64,100,.08); }
+    .title { margin:0; text-align:center; font-size:23px; }
+    .meta { display:flex; justify-content:space-between; margin:8px 0 15px; color:#5f6368; font-size:11px; }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:11px; }
+    th,td { padding:6px 4px; border:1px solid #9aa0a6; text-align:center; word-break:keep-all; }
+    th { color:#17365d; background:#e8f0fe; }
+    td.name { font-weight:bold; }
+    td.money { text-align:right; padding-right:7px; }
+    .badge { display:inline-block; padding:2px 6px; border-radius:10px; font-size:9px; font-weight:bold; }
+    .badge.active { color:#137333; background:#e6f4ea; }
+    .badge.planned { color:#9a5700; background:#fef7e0; }
+    .badge.retired { color:#5f6368; background:#f1f3f4; }
+    .empty { padding:50px; color:#80868b; text-align:center; }
+    @page { size:A4 landscape; margin:8mm; }
+    @media print {
+      body { padding:0; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .toolbar { display:none !important; }
+      .sheet { padding:0; border-radius:0; box-shadow:none; }
+      .title { font-size:18px; }
+      .meta { margin:5px 0 9px; font-size:9px; }
+      table { font-size:8.5px; }
+      th,td { padding:3px 2px; }
+      thead { display:table-header-group; }
+      tr { break-inside:avoid; page-break-inside:avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="toolbar-title">🖨️ 전체 학생 명단</div>
+    <label>상태 <select id="statusFilter" onchange="renderRoster()"><option value="">전체 학생</option><option value="재원">재원</option><option value="퇴원예정">퇴원예정</option><option value="퇴원">퇴원</option></select></label>
+    <span id="loadStatus" class="status">불러오는 중</span>
+    <button id="printButton" class="primary" onclick="printRoster()" disabled>불러오는 중</button>
+    <button onclick="google.script.host.close()">닫기</button>
+  </div>
+  <main class="sheet">
+    <h1 class="title">전체 학생 명단</h1>
+    <div class="meta"><span id="countText">데이터를 불러오는 중입니다.</span><span id="generatedAt"></span></div>
+    <div id="roster"><div class="empty">학생 명단을 불러오는 중입니다.</div></div>
+  </main>
+  <script>
+    var rosterData = null;
+    function escapeHtml(value) {
+      return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]; });
+    }
+    function statusBadge(status) {
+      var css = status === "재원" ? "active" : (status === "퇴원예정" ? "planned" : "retired");
+      return '<span class="badge ' + css + '">' + escapeHtml(status || "-") + '</span>';
+    }
+    function currentRows() {
+      if (!rosterData) return [];
+      var status = document.getElementById("statusFilter").value;
+      return rosterData.rows.filter(function(item) { return !status || item.status === status; });
+    }
+    function renderRoster() {
+      var rows = currentRows();
+      document.getElementById("countText").textContent = "출력 대상 " + rows.length + "명";
+      var box = document.getElementById("roster");
+      if (!rows.length) { box.innerHTML = '<div class="empty">조건에 맞는 학생이 없습니다.</div>'; return; }
+      var body = rows.map(function(item, index) {
+        return '<tr><td>' + (index + 1) + '</td><td>' + statusBadge(item.status) + '</td><td class="name"><button type="button" class="student-info-link" data-student-modal-id="' + escapeHtml(item.studentId) + '">' + escapeHtml(item.name) + '</button></td><td>' + escapeHtml(item.grade) + '</td><td>' + escapeHtml(item.courseMode) + '</td><td>' + escapeHtml(item.teacher) + '</td><td class="money">' + Number(item.fee || 0).toLocaleString() + '</td><td>' + escapeHtml(item.baseDay || "-") + '</td><td>' + escapeHtml(item.rate || "-") + '</td><td>' + escapeHtml(item.firstDate || "-") + '</td><td>' + escapeHtml(item.exitDate || "-") + '</td><td>' + escapeHtml(item.parentName || "-") + '</td><td>' + escapeHtml(item.phone || "-") + '</td></tr>';
+      }).join("");
+      box.innerHTML = '<table><colgroup><col style="width:3%"><col style="width:6%"><col style="width:7%"><col style="width:6%"><col style="width:7%"><col style="width:7%"><col style="width:8%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:12%"></colgroup><thead><tr><th>No.</th><th>상태</th><th>학생명</th><th>학년</th><th>수강형태</th><th>담당 원장</th><th>수강료</th><th>기준일</th><th>배분율</th><th>입학일</th><th>퇴원일</th><th>보호자</th><th>연락처</th></tr></thead><tbody>' + body + '</tbody></table>';
+    }
+    function printRoster() {
+      if (!rosterData) return;
+      window.print();
+    }
+    google.script.run.withSuccessHandler(function(result) {
+      rosterData = result || { rows:[], counts:{} };
+      document.getElementById("generatedAt").textContent = "출력 기준 " + (rosterData.generatedAt || "-");
+      document.getElementById("loadStatus").textContent = "인쇄 준비 완료";
+      document.getElementById("printButton").disabled = false;
+      document.getElementById("printButton").textContent = "인쇄하기";
+      renderRoster();
+    }).withFailureHandler(function(error) {
+      document.getElementById("loadStatus").textContent = "조회 실패";
+      document.getElementById("roster").innerHTML = '<div class="empty">' + escapeHtml((error && error.message) || error || "학생 명단을 불러오지 못했습니다.") + '<br>화면을 새로고침하고, 계속되면 학생 명단 접근 권한을 확인해주세요.</div>';
+    }).getStudentRosterPrintData();
+  </script>
+<?!= includeHtml_("StudentInfoModalCommon"); ?>
+<?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

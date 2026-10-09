@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Noto Sans KR', sans-serif; margin: 0; padding: 16px; background: #f8f9fa; color: #202124; font-size: 13px; }
+      .toolbar { background: #fff; border: 1px solid #dadce0; border-radius: 8px; padding: 12px; display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+      .field { display: flex; flex-direction: column; gap: 4px; }
+      label { font-size: 11px; color: #5f6368; font-weight: 700; }
+      input, select { height: 32px; border: 1px solid #dadce0; border-radius: 4px; padding: 0 8px; font-size: 13px; box-sizing: border-box; }
+      #query { width: 220px; }
+      button { height: 32px; border: 0; border-radius: 4px; padding: 0 14px; font-weight: 700; cursor: pointer; }
+      .btn-primary { background: #1a73e8; color: white; }
+      .btn-soft { background: #eef2f7; color: #202124; border: 1px solid #dadce0; }
+      .status { color: #5f6368; font-size: 12px; margin-left: auto; padding-bottom: 7px; }
+      .table-wrap { background: #fff; border: 1px solid #dadce0; border-radius: 8px; overflow: auto; max-height: 620px; }
+      table { border-collapse: collapse; width: 100%; min-width: 780px; table-layout: fixed; }
+      th, td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; }
+      th { position: sticky; top: 0; background: #f1f3f4; z-index: 1; color: #3c4043; font-size: 12px; }
+      td { white-space: nowrap; }
+      .muted { color: #80868b; }
+      .type-badge { display: inline-block; padding: 2px 6px; border-radius: 999px; background: #e8f0fe; color: #1967d2; font-weight: 700; font-size: 11px; }
+      .diff { white-space: normal; line-height: 1.35; }
+      .empty { padding: 42px; text-align: center; color: #80868b; }
+      .pager { display:flex; justify-content:center; align-items:center; gap:8px; margin-top:12px; }
+      .pager button:disabled { opacity:.45; cursor:default; }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <div class="field">
+        <label>검색</label>
+        <input id="query" type="text" placeholder="학생명, 항목, 내용">
+      </div>
+      <div class="field">
+        <label>항목</label>
+        <select id="type"><option value="ALL">전체</option></select>
+      </div>
+      <div class="field">
+        <label>시작일</label>
+        <input id="from" type="date">
+      </div>
+      <div class="field">
+        <label>종료일</label>
+        <input id="to" type="date">
+      </div>
+      <button class="btn-primary" onclick="loadLogs(true)">조회</button>
+      <button class="btn-soft" onclick="resetFilters()">초기화</button>
+      <div id="status" class="status">준비 중...</div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <colgroup>
+          <col style="width: 120px;">
+          <col style="width: 110px;">
+          <col style="width: 150px;">
+          <col style="width: 230px;">
+          <col style="width: 230px;">
+          <col style="width: 95px;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>기록시각</th>
+            <th>학생</th>
+            <th>항목</th>
+            <th>변경 전</th>
+            <th>변경 후</th>
+            <th>적용일</th>
+          </tr>
+        </thead>
+        <tbody id="logBody">
+          <tr><td colspan="6" class="empty">불러오는 중입니다...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <button id="prevPage" class="btn-soft" onclick="movePage(-1)" disabled>이전</button>
+      <span id="pageInfo" class="muted">1 / 1</span>
+      <button id="nextPage" class="btn-soft" onclick="movePage(1)" disabled>다음</button>
+    </div>
+
+    <script>
+      var currentPage = 1;
+      window.onload = function() {
+        var today = new Date();
+        var prior = new Date();
+        prior.setMonth(prior.getMonth() - 3);
+        document.getElementById("from").value = fmt(prior);
+        document.getElementById("to").value = fmt(today);
+        loadLogs();
+      };
+
+      function fmt(date) {
+        return date.getFullYear() + "-" + ("0" + (date.getMonth() + 1)).slice(-2) + "-" + ("0" + date.getDate()).slice(-2);
+      }
+
+      function loadLogs(resetPage) {
+        if (resetPage) currentPage = 1;
+        document.getElementById("status").innerText = "조회 중...";
+        document.getElementById("logBody").innerHTML = '<tr><td colspan="6" class="empty">불러오는 중입니다...</td></tr>';
+        google.script.run
+          .withSuccessHandler(renderLogs)
+          .withFailureHandler(function(err) {
+            document.getElementById("status").innerText = "오류";
+            var message = err && err.message ? err.message : String(err || "변경 기록을 불러오지 못했습니다.");
+            document.getElementById("logBody").innerHTML = '<tr><td colspan="6" class="empty">오류: ' + escapeHtml(message) + '<br>조회 기간을 확인한 뒤 다시 조회하거나 화면을 새로고침해주세요.</td></tr>';
+          })
+          .getChangeLogData({
+            query: document.getElementById("query").value,
+            type: document.getElementById("type").value,
+            from: document.getElementById("from").value,
+            to: document.getElementById("to").value,
+            page: currentPage,
+            pageSize: 100
+          });
+      }
+
+      function renderLogs(res) {
+        res = res || { rows: [], types: [] };
+        updateTypeOptions(res.types || []);
+        var rows = res.rows || [];
+        currentPage = Number(res.page) || 1;
+        var totalPages = Number(res.totalPages) || 1;
+        document.getElementById("status").innerText = res.message || ((Number(res.total) || 0) + "건");
+        document.getElementById("pageInfo").innerText = currentPage + " / " + totalPages;
+        document.getElementById("prevPage").disabled = !res.hasPrevious;
+        document.getElementById("nextPage").disabled = !res.hasNext;
+        if (rows.length === 0) {
+          document.getElementById("logBody").innerHTML = '<tr><td colspan="6" class="empty">조건에 맞는 변경 이력이 없습니다.</td></tr>';
+          return;
+        }
+        document.getElementById("logBody").innerHTML = rows.map(function(row) {
+          return '<tr>' +
+            '<td>' + escapeHtml(row.createdAt) + '</td>' +
+            '<td>' + (row.studentId ? '<button type="button" class="student-info-link" data-student-modal-id="' + escapeHtml(row.studentId) + '">' + escapeHtml(row.studentName || '-') + '</button>' : escapeHtml(row.studentName || '-')) + '</td>' +
+            '<td><span class="type-badge">' + escapeHtml(row.item || '-') + '</span></td>' +
+            '<td class="diff">' + escapeHtml(row.before || '-') + '</td>' +
+            '<td class="diff">' + escapeHtml(row.after || '-') + '</td>' +
+            '<td>' + escapeHtml(row.effectiveDate || '-') + '</td>' +
+          '</tr>';
+        }).join("");
+      }
+
+      function updateTypeOptions(types) {
+        var select = document.getElementById("type");
+        var current = select.value;
+        select.innerHTML = '<option value="ALL">전체</option>' + types.map(function(type) {
+          return '<option value="' + escapeHtml(type) + '">' + escapeHtml(type) + '</option>';
+        }).join("");
+        select.value = types.indexOf(current) !== -1 ? current : "ALL";
+      }
+
+      function resetFilters() {
+        document.getElementById("query").value = "";
+        document.getElementById("type").value = "ALL";
+        document.getElementById("from").value = "";
+        document.getElementById("to").value = "";
+        loadLogs(true);
+      }
+
+      function movePage(direction) {
+        currentPage = Math.max(1, currentPage + Number(direction || 0));
+        loadLogs(false);
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? "" : value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+    </script>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+  <?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

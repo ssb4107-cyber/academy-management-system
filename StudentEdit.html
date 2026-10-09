@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; background-color: #f8f9fa; }
+      h2 { margin-top: 0; color: #1a73e8; font-size: 18px; text-align: center; }
+      
+      .search-box { background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; }
+      .edit-box { background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; display: none; }
+      
+      label { display: block; font-size: 12px; font-weight: bold; color: #555; margin-bottom: 4px; margin-top: 10px; }
+      input, select { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+      
+      /* 비활성화 스타일 */
+      input:disabled, select:disabled { background-color: #f1f3f4; color: #999; cursor: not-allowed; }
+
+      #searchInput { background-color: #e8f0fe; border-color: #1a73e8; font-weight: bold; }
+      
+      button { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px; font-size: 14px; }
+      .btn-save { background: #1a73e8; color: white; }
+      .btn-close { 
+  background: #f1f3f4; 
+  color: #333 !important; 
+  margin-top: 10px; 
+  display: block; 
+  text-align: center; 
+  text-decoration: none; 
+  box-sizing: border-box; 
+  width: 100%; 
+  padding: 12px; 
+  border-radius: 6px; 
+  font-weight: bold; 
+  font-size: 14px; 
+}
+
+      .checkbox-container { display: flex; align-items: center; margin-top: 5px; margin-bottom: 10px; }
+      .checkbox-container input { width: auto; margin-right: 5px; cursor: pointer; }
+      .checkbox-container label { margin: 0; cursor: pointer; font-weight: normal; color: #333; }
+
+      #feeChangeDateArea,
+      #statusChangeDateArea,
+      #teacherChangeDateArea {
+        display: none; 
+        background-color: #e8f0fe;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px dashed #1a73e8;
+        margin-top: 5px;
+      }
+      .highlight-label { color: #1a73e8; font-weight: bold; }
+      .info-text { font-size: 12px; color: #1a73e8; font-weight: bold; margin-bottom: 5px; display: block; }
+      .lock-msg { font-size: 11px; color: #d93025; font-weight: normal; display: none; margin-top: 2px;}
+      .future-change-notice { display:none; margin-top:5px; color:#d93025; font-size:11px; font-weight:bold; line-height:1.5; white-space:pre-line; }
+      .edit-mode-row { display:flex; justify-content:flex-end; align-items:center; gap:7px; margin:-3px 0 10px; }
+      .edit-mode-label { color:#5f6368; font-size:11px; font-weight:bold; }
+      .course-mode-toggle { display:inline-flex; padding:2px; border:1px solid #c7d2e3; border-radius:999px; background:#eef2f7; }
+      .course-mode-toggle button { width:auto; margin:0; padding:6px 10px; border-radius:999px; background:transparent; color:#5f6368; font-size:11px; line-height:1; }
+      .course-mode-toggle button.active { background:#1a73e8; color:#fff; box-shadow:0 1px 4px rgba(26,115,232,.25); }
+      .course-mode-help { text-align:right; color:#5f6368; font-size:10px; margin:-6px 1px 8px; }
+    </style>
+  </head>
+  <body>
+    <h2>📝 학생 정보 수정/퇴원처리</h2>
+
+    <div class="search-box">
+      <label>학생 검색</label>
+      <input type="text" id="searchInput" placeholder="이름 검색..." onkeyup="filterList()">
+      
+      <div class="checkbox-container">
+        <input type="checkbox" id="chkRetired" onchange="reloadList()">
+        <label for="chkRetired">퇴원생 포함하여 검색</label>
+      </div>
+      
+      <label>목록 선택</label>
+      <select id="studentList" onchange="loadStudentInfo()">
+        <option value="" disabled selected>불러오는 중...</option>
+      </select>
+      <button type="button" class="student-info-link" style="margin-top:8px" onclick="StudentInfoModal.open(document.getElementById('studentList').value)">선택 학생 정보 보기</button>
+    </div>
+
+    <div id="editArea" class="edit-box">
+      <input type="hidden" id="e_id"> 
+      <input type="hidden" id="original_fee">
+      <input type="hidden" id="original_baseDay">
+      <input type="hidden" id="original_status">
+      <input type="hidden" id="original_teacher">
+      <input type="hidden" id="original_exitDate">
+      <input type="hidden" id="original_courseMode">
+      <input type="hidden" id="e_courseMode" value="정규">
+      <input type="hidden" id="e_asd">
+
+      <div class="edit-mode-row">
+        <span class="edit-mode-label">수강 형태</span>
+        <div class="course-mode-toggle" role="group" aria-label="수강 형태">
+          <button type="button" class="active" data-edit-course-mode="정규" onclick="setEditCourseMode('정규')">정규</button>
+          <button type="button" data-edit-course-mode="특강전용" onclick="setEditCourseMode('특강전용')">특강전용</button>
+        </div>
+      </div>
+      <div class="course-mode-help">특강전용은 정규 미납·수납률에서 제외하고 실제 특강비만 급여에 반영합니다.</div>
+
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1">
+          <label>이름</label>
+          <input type="text" id="e_name">
+        </div>
+        <div style="flex:1">
+          <label>상태</label>
+          <select id="e_status" onchange="handleStatusChange()" style="background:#fff2cc; font-weight:bold;">
+            <option value="재원">재원</option>
+            <option value="퇴원">퇴원</option>
+          </select>
+          <div id="future_status" class="future-change-notice"></div>
+        </div>
+      </div>
+
+      <div id="statusChangeDateArea">
+        <label class="highlight-label">퇴원 처리일</label>
+        <span class="info-text">퇴원으로 변경할 때 실제 퇴원일을 남깁니다.</span>
+        <input type="date" id="e_statusApplyDate">
+      </div>
+      
+      <label>학년 (학번 자동 매칭)</label>
+      <select id="e_grade"></select>
+      
+      <label>담당 원장</label>
+      <select id="e_teacher" onchange="checkTeacherChange()">
+        <option value="">원장을 선택해주세요</option>
+      </select>
+      <div id="future_teacher" class="future-change-notice"></div>
+
+      <div id="teacherChangeDateArea">
+        <label class="highlight-label">담당 원장 변경 적용 시작일</label>
+        <span class="info-text">수강료 변경과 같이 이 날짜부터 담당 원장이 바뀐 것으로 기록합니다.</span>
+        <input type="date" id="e_teacherApplyDate">
+      </div>
+      
+      <label>첫 수업일</label>
+      <input type="date" id="e_firstDate">
+
+      <label>학부모 전화번호</label>
+      <input type="text" id="e_phone" placeholder="010-0000-0000">
+      
+      <label>수강료 (원) <span id="msg_fee_lock" class="lock-msg">⚠️ 기준일 변경 중에는 수정 불가</span></label>
+      <input type="text" id="e_fee" oninput="formatFee(this); checkFeeChange()" style="text-align:right; font-weight:bold; color:#1a73e8;" placeholder="0">
+      <div id="future_fee" class="future-change-notice"></div>
+      
+      <div id="feeChangeDateArea">
+        <label class="highlight-label">📅 수강료 변경 적용 시작일</label>
+        <span id="feeBaseInfo" class="info-text"></span>
+              <input type="date" id="e_feeApplyDate" onchange="alignFeeDateToBaseDay()">
+      </div>
+      
+      <label>수강료 기준일 (매월) <span id="msg_day_lock" class="lock-msg">⚠️ 수강료 변경 중에는 수정 불가</span></label>
+      <input type="number" id="e_baseDay" min="1" max="31" oninput="checkBaseDayChange()">
+
+      <button class="btn-save" onclick="saveData()">수정 완료</button>
+    </div>
+
+    <a href="<?= ScriptApp.getService().getUrl() ?>" 
+       target="_top" 
+       class="btn-close" 
+       onclick="return smartClose(event);">
+       ✖ 닫기
+    </a>
+
+    <script>
+      var allStudents = [];
+      var studentListRequestGate = null;
+      var studentDetailRequestGate = null;
+
+      function ensureStudentRequestGates() {
+        if (!studentListRequestGate) studentListRequestGate = CommonStudentPicker.createRequestGate();
+        if (!studentDetailRequestGate) studentDetailRequestGate = CommonStudentPicker.createRequestGate();
+      }
+
+      function clearStudentSelection() {
+        ensureStudentRequestGates();
+        CommonStudentPicker.resetSelection({
+          selectId: "studentList", valueIds: ["e_id"], hideIds: ["editArea"],
+          gate: studentDetailRequestGate
+        });
+      }
+
+      window.onload = function() {
+        generateGradeOptions();
+        
+        var presetName = "<?= searchName ?>";
+        if (presetName && presetName.trim() !== "") {
+          reloadList(true); // 외부 요청이 있을 땐 퇴원생 포함(true)해서 강제 로딩
+        } else {
+          reloadList();     // 평소에는 기존 방식대로 로딩
+        }
+        
+        google.script.run.withSuccessHandler(setTeacherList).withFailureHandler(function(error) {
+          alert(CommonUiFailure.message("학생 수정 원장 목록 조회", error));
+        }).getTeacherOptionsForStudentEdit();
+      };
+
+      // (기존 generateGradeOptions, reloadList, initList, renderOptions, setTeacherList, filterList 함수들은 그대로 유지)
+      function generateGradeOptions() {
+        var select = document.getElementById("e_grade");
+        select.innerHTML = ""; 
+        var currentYear = new Date().getFullYear();
+        var grades = [{name:"고3",d:1},{name:"고2",d:2},{name:"고1",d:3},{name:"중3",d:4},{name:"중2",d:5},{name:"중1",d:6},{name:"초6",d:7},{name:"초5",d:8},{name:"초4",d:9},{name:"초3",d:10},{name:"초2",d:11},{name:"초1",d:12}];
+        grades.forEach(function(g){
+          var opt = document.createElement("option");
+          opt.value = String(currentYear+g.d).substring(2,4)+"학번-"+g.name;
+          opt.text = opt.value;
+          select.appendChild(opt);
+        });
+        select.appendChild(new Option("기타(성인/졸업)", "00학번-기타"));
+      }
+      function reloadList(forceInclude) {
+        ensureStudentRequestGates();
+        clearStudentSelection();
+        // 1. [기존 코드 유지] 선택 상자 정의 및 로딩 상태 표시
+        var sel = document.getElementById("studentList");
+        sel.innerHTML = '<option>로딩 중...</option>';
+        sel.disabled = true;
+
+        // 2. [기능 확장] forceInclude가 true로 들어오면 무조건 true, 없으면 기존 체크박스 상태를 따름
+        var chk = forceInclude || document.getElementById("chkRetired").checked;
+        
+        // 3. [기존 코드 유지] 서버 데이터 요청
+        var requestVersion = studentListRequestGate.next();
+        google.script.run.withSuccessHandler(function(list) {
+          if (!studentListRequestGate.isCurrent(requestVersion)) return;
+          initList(list);
+        }).withFailureHandler(function(error) {
+          if (!studentListRequestGate.isCurrent(requestVersion)) return;
+          sel.innerHTML = '<option>학생 목록을 불러오지 못했습니다. 새로고침해주세요.</option>';
+          sel.disabled = false;
+          alert(CommonUiFailure.message("학생 수정 목록 조회", error));
+        }).getStudentListForEdit(chk);
+      }
+      function initList(list) {
+        var sel = document.getElementById("studentList");
+        sel.disabled = false;
+        allStudents = list || [];
+        allStudents.sort((a,b)=>a.name<b.name?-1:1);
+        renderOptions(allStudents);
+
+        // ==========================================
+        // ★ [신규 추가] 외부에서 전달된 이름 자동 검색 및 선택 로직
+        // ==========================================
+        // 1. Code.gs에서 넘겨준 searchName 받기
+        var presetName = "<?= searchName ?>"; 
+
+        if (presetName && presetName.trim() !== "") {
+          var searchInput = document.getElementById("searchInput");
+          
+          if (searchInput) {
+            searchInput.value = presetName; 
+          }
+
+          var targetId = "";
+          
+          // 전체 학생 배열에서 순수 이름이 일치하는 ID 찾기
+          for (var i = 0; i < allStudents.length; i++) {
+            if (allStudents[i].name === presetName) {
+              targetId = allStudents[i].id;
+              break;
+            }
+          }
+
+          // ID가 매칭되면 드롭다운 값을 바꾸고 상세정보 로딩 (체크박스를 건드리지 않으므로 오작동 없음)
+          if (targetId !== "") {
+            sel.value = targetId;  
+            loadStudentInfo();     
+          }
+        }
+        // ==========================================
+      }
+      function renderOptions(list) {
+        var sel = document.getElementById("studentList");
+        sel.innerHTML = '<option value="" disabled selected>학생 선택 ('+list.length+')</option>';
+        list.forEach(s => {
+          var opt = document.createElement("option");
+          opt.value = s.id;
+          opt.text = s.nameLabel ? s.nameLabel : s.name; 
+          if(s.grade) opt.text += " (" + s.grade + ")";
+          sel.appendChild(opt);
+        });
+      }
+      var managedTeacherOptions = [];
+      var pendingTeacherValue = "";
+      function setTeacherList(t) {
+        var select = document.getElementById("e_teacher");
+        select.innerHTML = "";
+        select.appendChild(new Option("원장을 선택해주세요", ""));
+        managedTeacherOptions = t || [];
+        managedTeacherOptions.forEach(function(item) {
+          var option = new Option(item.name + (item.active ? "" : " (비활성)"), item.id);
+          option.dataset.teacherName = item.name;
+          select.appendChild(option);
+        });
+        if (pendingTeacherValue) select.value = pendingTeacherValue;
+      }
+      function filterList() {
+        clearStudentSelection();
+        var input = document.getElementById("searchInput").value;
+        var filtered = CommonStudentPicker.filterStudents(allStudents, input, { fields: ["name"] });
+        renderOptions(filtered);
+        CommonStudentPicker.autoSelectSingle("studentList", filtered);
+      }
+
+      function loadStudentInfo() {
+        var id = document.getElementById("studentList").value;
+        if (!id) return;
+        ensureStudentRequestGates();
+        var requestVersion = studentDetailRequestGate.next();
+        document.getElementById("editArea").style.display = "block";
+        google.script.run.withSuccessHandler(function(data) {
+          if (!studentDetailRequestGate.isCurrent(requestVersion) || document.getElementById("studentList").value !== id) return;
+          fillData(data);
+        }).withFailureHandler(function(error) {
+          if (!studentDetailRequestGate.isCurrent(requestVersion)) return;
+          document.getElementById("editArea").style.display = "none";
+          alert(CommonUiFailure.message("학생 상세정보 조회", error));
+        }).getStudentDetail(id);
+      }
+
+      function renderFutureChanges(futureChanges) {
+        var changes = futureChanges || {};
+        var formatValue = function(field, value) {
+          if (field === "fee") {
+            var number = Number(String(value == null ? "" : value).replace(/,/g, ""));
+            return isNaN(number) ? String(value || "") : number.toLocaleString() + "원";
+          }
+          return String(value == null ? "" : value);
+        };
+
+        ["status", "teacher", "fee"].forEach(function(field) {
+          var box = document.getElementById("future_" + field);
+          var list = changes[field] || [];
+          if (!box) return;
+          if (list.length === 0) {
+            box.textContent = "";
+            box.style.display = "none";
+            return;
+          }
+          box.textContent = list.map(function(change) {
+            return "🔴 " + change.effectiveDate + "부터 적용 예정 (" +
+              formatValue(field, change.before) + " → " + formatValue(field, change.after) + ")";
+          }).join("\n");
+          box.style.display = "block";
+        });
+      }
+
+      var editRegularFeeBeforeSpecial = null;
+      function setEditCourseMode(mode, loading) {
+        var normalized = mode === "특강전용" ? "특강전용" : "정규";
+        var modeInput = document.getElementById("e_courseMode");
+        var previousMode = modeInput.value;
+        var feeInput = document.getElementById("e_fee");
+        if (loading) editRegularFeeBeforeSpecial = null;
+        if (!loading && normalized === "특강전용" && previousMode !== "특강전용") {
+          editRegularFeeBeforeSpecial = feeInput.value;
+        }
+        modeInput.value = normalized;
+        if (normalized === "특강전용") {
+          feeInput.value = "0";
+          feeInput.disabled = true;
+        } else {
+          feeInput.disabled = false;
+          if (!loading && previousMode === "특강전용" && editRegularFeeBeforeSpecial != null) {
+            feeInput.value = editRegularFeeBeforeSpecial;
+          }
+        }
+        document.querySelectorAll("[data-edit-course-mode]").forEach(function(button) {
+          button.classList.toggle("active", button.dataset.editCourseMode === normalized);
+        });
+        if (!loading) checkFeeChange();
+      }
+
+      function fillData(data) {
+        if (!data) return;
+        document.getElementById("e_id").value = data.id;
+        document.getElementById("e_name").value = data.name;
+        document.getElementById("e_status").value = data.status;
+        document.getElementById("original_status").value = data.status;
+        document.getElementById("e_grade").value = data.grade;
+        pendingTeacherValue = data.teacherId || "";
+        document.getElementById("e_teacher").value = pendingTeacherValue;
+        document.getElementById("original_teacher").value = pendingTeacherValue;
+        document.getElementById("original_exitDate").value = data.exitDate || "";
+        document.getElementById("original_courseMode").value = data.courseMode || "정규";
+        
+        if (data.firstDate) {
+           document.getElementById("e_firstDate").value = String(data.firstDate).substring(0, 10);
+        }
+        if (data.asd) {
+           document.getElementById("e_asd").value = String(data.asd).substring(0, 10);
+        } else {
+           document.getElementById("e_asd").value = "";
+        }
+        document.getElementById("e_fee").style.backgroundColor = "";
+        document.getElementById("e_baseDay").style.backgroundColor = "";
+
+        document.getElementById("e_phone").value = data.phone;
+        document.getElementById("e_baseDay").value = data.baseDay;
+        document.getElementById("original_baseDay").value = data.baseDay;
+        
+        // ★ [변경] 수강료 불러올 때 쉼표 찍어서 표시
+        var fee = data.fee ? Number(data.fee) : 0;
+        document.getElementById("e_fee").value = fee.toLocaleString();
+        document.getElementById("original_fee").value = fee; // 원본은 숫자 그대로 저장
+        renderFutureChanges(data.futureChanges);
+        
+        resetLocks();
+        setEditCourseMode(data.courseMode || "정규", true);
+        document.getElementById("feeChangeDateArea").style.display = "none";
+        document.getElementById("e_feeApplyDate").value = "";
+        document.getElementById("statusChangeDateArea").style.display = "none";
+        document.getElementById("e_statusApplyDate").value = "";
+        document.getElementById("teacherChangeDateArea").style.display = "none";
+        document.getElementById("e_teacherApplyDate").value = "";
+      }
+
+      function getTodayString() {
+        var today = new Date();
+        var yyyy = today.getFullYear();
+        var mm = String(today.getMonth() + 1).padStart(2, '0');
+        var dd = String(today.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+
+      function handleStatusChange() {
+        var currentStatus = document.getElementById("e_status").value;
+        var originalStatus = document.getElementById("original_status").value;
+        
+        if (originalStatus === "퇴원" && currentStatus === "재원") {
+          var isConfirm = confirm("⚠️ 퇴원 학생을 [재원] 상태로 변경하시겠습니까?\n\n재입학 처리 시 '첫 수업일'은 오늘 날짜로 갱신되며, 기존 최초 입학일 기록은 새로운 열(asd)에 안전하게 자동 보존됩니다.");
+          
+          if (isConfirm) {
+            var today = new Date();
+            var todayStr = getTodayString();
+            
+            var firstDateInput = document.getElementById("e_firstDate");
+            var oldFirstDate = firstDateInput.value;
+            
+            firstDateInput.value = todayStr;
+            
+            var asdInput = document.getElementById("e_asd");
+            if (!asdInput.value && oldFirstDate) {
+              asdInput.value = oldFirstDate;
+            }
+            
+            var feeInput = document.getElementById("e_fee");
+            var baseDayInput = document.getElementById("e_baseDay");
+            feeInput.style.backgroundColor = "#fff2cc";
+            baseDayInput.style.backgroundColor = "#fff2cc";
+            
+            alert("💡 재입학 일자 세팅 완료!\n새로운 수강료 및 수강료 기준일이 올바른지 확인해 주세요.");
+            baseDayInput.value = today.getDate(); 
+            baseDayInput.focus();
+          } else {
+            document.getElementById("e_status").value = "퇴원";
+          }
+        } else {
+          document.getElementById("e_fee").style.backgroundColor = "";
+          document.getElementById("e_baseDay").style.backgroundColor = "";
+        }
+
+        var statusDateBox = document.getElementById("statusChangeDateArea");
+        var statusDateInput = document.getElementById("e_statusApplyDate");
+        currentStatus = document.getElementById("e_status").value;
+
+        if (originalStatus !== currentStatus && document.getElementById("e_status").selectedIndex === 1) {
+          statusDateBox.style.display = "block";
+          if (!statusDateInput.value) statusDateInput.value = document.getElementById("original_exitDate").value || getTodayString();
+        } else {
+          statusDateBox.style.display = "none";
+          statusDateInput.value = "";
+        }
+      }
+
+      function checkTeacherChange() {
+        var currentTeacher = document.getElementById("e_teacher").value.trim();
+        var originalTeacher = document.getElementById("original_teacher").value.trim();
+        var dateBox = document.getElementById("teacherChangeDateArea");
+        var dateInput = document.getElementById("e_teacherApplyDate");
+
+        if (currentTeacher !== originalTeacher) {
+          dateBox.style.display = "block";
+          if (!dateInput.value) dateInput.value = getTodayString();
+        } else {
+          dateBox.style.display = "none";
+          dateInput.value = "";
+        }
+      }
+
+      // ★ [신규] 숫자 입력 시 쉼표 자동 생성 함수
+      function formatFee(input) {
+        // 숫자만 남기고 제거
+        var val = input.value.replace(/[^0-9]/g, "");
+        if (!val) {
+           input.value = "";
+           return;
+        }
+        // 쉼표 찍어서 다시 넣기
+        input.value = Number(val).toLocaleString();
+      }
+
+      function resetLocks() {
+        document.getElementById("e_fee").disabled = false;
+        document.getElementById("e_baseDay").disabled = false;
+        document.getElementById("msg_fee_lock").style.display = "none";
+        document.getElementById("msg_day_lock").style.display = "none";
+      }
+
+      function updateFeeHelpText() {
+          var baseDay = document.getElementById("e_baseDay").value;
+          var infoBox = document.getElementById("feeBaseInfo");
+          if(baseDay) {
+            infoBox.innerText = "💡 수강료 변경은 매월 " + baseDay + "일에만 적용됩니다. 선택한 달에 해당 날짜가 없으면 월말로 적용됩니다.";
+          }
+      }
+
+      function checkFeeChange() {
+        // 비교할 때는 쉼표 떼고 순수 숫자로 변환
+        var currentValStr = document.getElementById("e_fee").value.replace(/,/g, ""); 
+        var currentFee = Number(currentValStr);
+        var originalFee = Number(document.getElementById("original_fee").value);
+        
+        var dateBox = document.getElementById("feeChangeDateArea");
+        var dateInput = document.getElementById("e_feeApplyDate");
+        var baseDayInput = document.getElementById("e_baseDay");
+        var baseDayVal = parseInt(baseDayInput.value);
+
+        updateFeeHelpText();
+
+        if (currentFee !== originalFee) {
+          baseDayInput.disabled = true;
+          document.getElementById("msg_day_lock").style.display = "inline";
+
+          dateBox.style.display = "block";
+          if (!dateInput.value && baseDayVal) {
+            var today = new Date();
+            var targetYear = today.getFullYear();
+            var targetMonth = today.getMonth(); 
+            var candidateDate = new Date(targetYear, targetMonth, baseDayVal);
+            if (today > candidateDate) {
+               candidateDate = new Date(targetYear, targetMonth + 1, baseDayVal);
+            }
+            var yyyy = candidateDate.getFullYear();
+            var mm = String(candidateDate.getMonth() + 1).padStart(2, '0');
+            var dd = String(candidateDate.getDate()).padStart(2, '0');
+            dateInput.value = `${yyyy}-${mm}-${dd}`;
+          }
+        } else {
+          baseDayInput.disabled = false;
+          document.getElementById("msg_day_lock").style.display = "none";
+          dateBox.style.display = "none";
+          dateInput.value = ""; 
+        }
+      }
+
+      function alignFeeDateToBaseDay() {
+        var dateInput = document.getElementById("e_feeApplyDate");
+        var baseDay = Number(document.getElementById("e_baseDay").value);
+        if (!dateInput.value || !baseDay) return;
+        var parts = dateInput.value.split("-").map(Number);
+        var lastDay = new Date(parts[0], parts[1], 0).getDate();
+        dateInput.value = parts[0] + "-" + String(parts[1]).padStart(2, "0") + "-" + String(Math.min(baseDay, lastDay)).padStart(2, "0");
+      }
+
+      function checkBaseDayChange() {
+        var currentDay = document.getElementById("e_baseDay").value;
+        var originalDay = document.getElementById("original_baseDay").value;
+        var feeInput = document.getElementById("e_fee");
+
+        if (Number(currentDay) !== Number(originalDay)) {
+          feeInput.disabled = true;
+          document.getElementById("msg_fee_lock").style.display = "inline";
+        } else {
+          feeInput.disabled = document.getElementById("e_courseMode").value === "특강전용";
+          document.getElementById("msg_fee_lock").style.display = "none";
+        }
+      }
+
+      function saveData() {
+        // ★ 저장할 때 쉼표(,) 제거하고 숫자만 보냄
+        var rawFee = document.getElementById("e_fee").value.replace(/,/g, "");
+
+        var teacherSelect = document.getElementById("e_teacher");
+        var teacherValue = teacherSelect.value;
+        if (!teacherValue) {
+          alert("담당 원장을 선택해주세요. 기존 학생의 원장 ID가 비어 있다면 데이터 진단을 먼저 실행해주세요.");
+          return;
+        }
+        var form = {
+          studentId: document.getElementById("e_id").value,
+          name: document.getElementById("e_name").value,
+          status: document.getElementById("e_status").value,
+          statusChanged: document.getElementById("original_status").value !== document.getElementById("e_status").value,
+          grade: document.getElementById("e_grade").value,
+          teacherId: teacherValue,
+          firstDate: document.getElementById("e_firstDate").value,
+          asd: document.getElementById("e_asd").value,
+          phone: document.getElementById("e_phone").value,
+          fee: rawFee, // 쉼표 없는 순수 숫자
+          baseDay: document.getElementById("e_baseDay").value,
+          feeApplyDate: document.getElementById("e_feeApplyDate").value,
+          statusApplyDate: document.getElementById("e_statusApplyDate").value,
+          teacherApplyDate: document.getElementById("e_teacherApplyDate").value
+          ,courseMode: document.getElementById("e_courseMode").value
+        };
+
+        if(!confirm("수정하시겠습니까?")) return;
+        
+        var btn = document.querySelector(".btn-save");
+        btn.innerText = "저장 중...";
+        btn.disabled = true;
+
+        google.script.run.withSuccessHandler(function(res){
+          // 1. 성공 메시지
+          alert(res);
+          
+          // 2. ★ 웹 앱 UX: 수정 완료 시 초기 화면으로 복귀
+          clearStudentSelection();
+          document.getElementById("searchInput").value = "";          // 검색어 초기화
+          
+          // 3. 버튼 원상복구
+          btn.innerText = "수정 완료";
+          btn.disabled = false;
+          
+          // 4. 목록 새로고침 (이름/학년 변경 반영)
+          reloadList(); 
+          
+          // 5. 닫기 시도 (스프레드시트용)
+          try { google.script.host.close(); } catch(e) {}
+          
+        }).withFailureHandler(function(error) {
+          CommonUiFailure.report("학생 정보 수정", error, function() {
+            btn.innerText = "수정하기";
+            btn.disabled = false;
+          });
+        }).updateStudentData(form);
+      }
+      // ★ 추가할 함수: 팝업/웹앱 호환 스마트 닫기 스위치
+      function smartClose(event) {
+        try {
+          if (window.top === window.self) return true; 
+          
+          if (document.referrer.indexOf("docs.google.com") !== -1) {
+            event.preventDefault();     
+            google.script.host.close(); 
+            return false;
+          }
+          return true; 
+        } catch(e) {
+          event.preventDefault();
+          google.script.host.close();
+          return false;
+        }
+      }
+    </script>
+  <?!= includeHtml_('StudentPickerCommon'); ?>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+<?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

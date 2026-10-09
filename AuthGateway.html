@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f3f6f8;color:#202124;font:14px Arial,'Noto Sans KR',sans-serif}
+    .card{width:min(390px,calc(100% - 30px));padding:28px;background:#fff;border:1px solid #dfe5eb;border-radius:18px;box-shadow:0 10px 35px rgba(26,47,66,.12);text-align:center;box-sizing:border-box}
+    .logo{font-size:38px}.card h1{margin:10px 0 7px;font-size:23px;color:#17365d}.desc{margin:0 0 22px;color:#66727e;line-height:1.65}
+    .signin{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:min(300px,100%);min-height:44px;padding:0 18px;border:1px solid #c7cdd3;border-radius:22px;background:#fff;color:#27313a;text-decoration:none;font-weight:700;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+    .signin:hover{background:#e8f0fe;border-color:#aecbfa}.google-mark{font-size:19px;font-weight:900;color:#4285f4}.status{margin-top:16px;padding:11px;border-radius:9px;background:#fce8e6;color:#a5271e;word-break:keep-all}.note{margin-top:18px;color:#8a949e;font-size:11px;line-height:1.55}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo">🎓</div>
+    <h1>학원비 관리</h1>
+    <p class="desc">승인된 Google 계정으로 로그인하세요.<br>계정 권한에 맞는 화면으로 연결됩니다.</p>
+    <? if (authorizationUrl) { ?>
+      <a class="signin" href="<?!= authorizationUrl ?>" target="_blank" rel="noopener" onclick="if(window.top===window.self)this.target='_self'"><span class="google-mark">G</span><span>Google 계정 선택</span></a>
+    <? } ?>
+    <? if (message) { ?><div class="status"><?= message ?></div><? } ?>
+    <div class="note">로그인은 Google 페이지로 이동한 뒤 이 웹앱으로 안전하게 돌아옵니다.</div>
+  </main>
+</body>
+</html>

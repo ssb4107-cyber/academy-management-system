@@ -1,0 +1,33 @@
+name: 안전 검사
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 소스 받기
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Node 준비
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: 저장소 비밀값 검사
+        run: node tests/repository-security.test.cjs
+      - name: 정적 검사
+        run: node tests/static-audit.cjs
+      - name: 통합 회귀 검사
+        run: node tests/p2-integrity.test.cjs
+      - name: 용어 검사
+        run: node tests/glossary.test.cjs

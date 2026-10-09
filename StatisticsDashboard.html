@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --blue:#1a73e8; --blue-soft:#e8f0fe; --green:#188038; --green-soft:#e6f4ea;
+      --orange:#f29900; --red:#d93025; --ink:#202124; --muted:#5f6368; --line:#dadce0;
+      --bg:#f3f6fb; --card:#fff; --navy:#16325c; --purple:#7c4dff;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:linear-gradient(180deg,#edf3ff 0,#f6f8fb 260px); color:var(--ink); font:14px/1.45 Arial,"Noto Sans KR",sans-serif; }
+    .top { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; padding:16px 22px; color:#fff; background:linear-gradient(120deg,#16325c,#1a73e8); box-shadow:0 5px 18px rgba(22,50,92,.2); }
+    .title-wrap { margin-right:auto; min-width:210px; }
+    .title { font-size:22px; font-weight:800; letter-spacing:-.5px; }
+    .title-sub { margin-top:2px; color:rgba(255,255,255,.75); font-size:11px; }
+    .range { display:flex; align-items:center; gap:8px; padding:7px 9px; border:1px solid rgba(255,255,255,.22); border-radius:11px; background:rgba(255,255,255,.12); }
+    .range label { display:flex; align-items:center; gap:5px; font-size:12px; font-weight:700; }
+    input[type=month],.range select { padding:8px 9px; border:1px solid rgba(255,255,255,.4); border-radius:7px; background:#fff; color:var(--ink); font:inherit; }
+    button { border:0; border-radius:8px; padding:10px 15px; font-weight:700; cursor:pointer; }
+    button.primary { color:var(--navy); background:#fff; box-shadow:0 2px 7px rgba(0,0,0,.15); }
+    button.secondary { color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    main { max-width:1480px; margin:0 auto; padding:22px 18px 30px; }
+    .notice { padding:10px 14px; border:1px solid #d7e3f7; border-radius:10px; background:rgba(255,255,255,.75); color:#526175; margin-bottom:16px; box-shadow:0 1px 2px rgba(60,64,67,.04); }
+    .cards { display:grid; grid-template-columns:repeat(6,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
+    .card,.panel { background:var(--card); border:1px solid #e1e7f0; border-radius:14px; box-shadow:0 4px 14px rgba(40,64,100,.07); }
+    .card { position:relative; padding:15px 15px 13px; min-height:104px; overflow:hidden; transition:transform .15s ease,box-shadow .15s ease; }
+    .card:hover { transform:translateY(-2px); box-shadow:0 7px 18px rgba(40,64,100,.12); }
+    .card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#aab6c8; }
+    .card.primary-kpi::before { background:var(--blue); }
+    .card.success-kpi::before { background:var(--green); }
+    .card.warning-kpi::before { background:var(--orange); }
+    .card.purple-kpi::before { background:var(--purple); }
+    .card-icon { float:right; width:31px; height:31px; display:flex; align-items:center; justify-content:center; border-radius:9px; background:#f0f4fa; font-size:17px; }
+    .card .label { color:var(--muted); font-size:12px; font-weight:700; }
+    .card .value { clear:left; margin-top:9px; font-size:23px; font-weight:800; letter-spacing:-.7px; color:var(--navy); }
+    .card .sub { color:var(--muted); font-size:11px; margin-top:3px; }
+    .panel { padding:18px; margin-bottom:16px; overflow:hidden; }
+    .panel-title { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:17px; font-weight:800; color:var(--navy); margin-bottom:14px; }
+    .panel-title small { color:var(--muted); font-size:11px; font-weight:500; }
+    .legend { display:flex; gap:14px; color:var(--muted); font-size:12px; font-weight:600; }
+    .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+    #trendChart { width:100%; min-height:280px; display:block; border-radius:10px; background:linear-gradient(180deg,#fbfdff,#fff); }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .table-wrap { overflow:auto; max-height:440px; border:1px solid #edf0f2; border-radius:9px; }
+    table { width:100%; border-collapse:collapse; white-space:nowrap; }
+    th,td { padding:9px 10px; border-bottom:1px solid #edf0f2; text-align:right; }
+    th { position:sticky; top:0; z-index:1; background:#f2f6fb; color:#526175; font-size:12px; }
+    th:first-child,td:first-child { text-align:left; }
+    tbody tr:nth-child(even) { background:#fbfcfe; }
+    tbody tr:hover { background:#eef5ff; }
+    .money { font-variant-numeric:tabular-nums; }
+    .bar-cell { min-width:170px; }
+    .bar { height:7px; background:#edf1f7; border-radius:5px; overflow:hidden; margin-top:4px; }
+    .bar > span { display:block; height:100%; background:var(--blue); border-radius:5px; }
+    .pie-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:18px; align-items:center; margin:4px 0 16px; }
+    .pie-chart { width:170px; height:170px; border-radius:50%; position:relative; margin:auto; box-shadow:0 6px 18px rgba(40,64,100,.13),inset 0 0 0 1px rgba(0,0,0,.04); }
+    .pie-chart::after { content:""; position:absolute; inset:35px; border-radius:50%; background:#fff; box-shadow:0 0 0 1px rgba(0,0,0,.04); }
+    .pie-center { position:absolute; inset:35px; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
+    .pie-center strong { font-size:15px; }
+    .pie-center span { color:var(--muted); font-size:10px; margin-top:2px; }
+    .pie-legend { display:grid; gap:7px; }
+    .pie-legend-row { display:grid; grid-template-columns:12px minmax(70px,1fr) auto auto; align-items:center; gap:7px; font-size:12px; }
+    .pie-swatch { width:10px; height:10px; border-radius:3px; }
+    .pie-ratio { min-width:46px; color:var(--muted); text-align:right; }
+    .loading,.empty { padding:70px 20px; text-align:center; color:var(--muted); font-size:16px; }
+    .loading::before { content:""; display:block; width:28px; height:28px; margin:0 auto 12px; border:3px solid #d8e3f4; border-top-color:var(--blue); border-radius:50%; animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .error { color:var(--red); background:#fce8e6; border:1px solid #f5c6c2; padding:12px; border-radius:8px; margin-bottom:14px; display:none; }
+    .status-line { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:10px; }
+    .status-line div { text-align:center; border-radius:8px; padding:10px 6px; background:#f8f9fa; }
+    .status-line strong { display:block; font-size:20px; }
+    @media(max-width:1050px) {
+      .cards { grid-template-columns:repeat(3,1fr); }
+      .grid { grid-template-columns:1fr; }
+      .top { flex-wrap:wrap; }
+      .title-wrap { width:100%; }
+      .pie-layout { grid-template-columns:1fr; }
+    }
+    @media(max-width:650px) {
+      .cards { grid-template-columns:repeat(2,1fr); }
+      .range { width:100%; flex-wrap:wrap; }
+      .top button { flex:1; }
+      main { padding:10px; }
+    }
+    @media print {
+      .top button,.range { display:none!important; }
+      .top { position:static; box-shadow:none; color:#202124; background:#fff; }
+      .title-sub { color:#5f6368; }
+      main { max-width:none; padding:8px; }
+      .panel,.card { box-shadow:none; break-inside:avoid; }
+      .table-wrap { max-height:none; overflow:visible; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="title-wrap"><div class="title">📈 기간별 통계</div><div class="title-sub">수납·학생 현황을 한눈에 비교합니다</div></div>
+    <div class="range">
+      <label>시작 <input id="startYm" type="month"></label>
+      <span>~</span>
+      <label>종료 <input id="endYm" type="month"></label>
+      <label>수납 기준 <select id="revenueBasis"><option value="PAY_DATE" selected>실제 납부일</option><option value="ATTRIBUTION">수업 귀속월</option></select></label>
+    </div>
+    <button id="loadBtn" class="primary" onclick="loadStatistics()">조회</button>
+    <button class="secondary" onclick="window.print()">인쇄</button>
+    <button class="secondary" onclick="downloadCsv()">CSV</button>
+  </header>
+  <main>
+    <div id="errorBox" class="error"></div>
+    <div id="basis" class="notice">조회 기간을 선택하면 기존 수납·학생·휴가·변경 이력을 읽어 통계를 계산합니다.</div>
+    <div id="content"><div class="loading">통계를 준비하고 있습니다.</div></div>
+  </main>
+
+  <script>
+    var currentStatistics = null;
+    var statisticsRequestVersion = 0;
+
+    function monthText(date) {
+      return date.getFullYear() + "-" + ("0" + (date.getMonth() + 1)).slice(-2);
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) {
+        return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];
+      });
+    }
+
+    function won(value) {
+      return (Number(value) || 0).toLocaleString("ko-KR") + "원";
+    }
+
+    function numberText(value) {
+      return (Number(value) || 0).toLocaleString("ko-KR");
+    }
+
+    function initializeRange() {
+      var end = new Date();
+      var start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
+      document.getElementById("startYm").value = monthText(start);
+      document.getElementById("endYm").value = monthText(end);
+      loadStatistics();
+    }
+
+    function setLoading(loading) {
+      var button = document.getElementById("loadBtn");
+      button.disabled = loading;
+      button.textContent = loading ? "조회 중..." : "조회";
+      if (loading) document.getElementById("content").innerHTML = '<div class="loading">기간 데이터를 계산하고 있습니다.</div>';
+    }
+
+    function showError(message) {
+      var box = document.getElementById("errorBox");
+      box.textContent = message;
+      box.style.display = "block";
+    }
+
+    function loadStatistics() {
+      var startYm = document.getElementById("startYm").value;
+      var endYm = document.getElementById("endYm").value;
+      var revenueBasis = document.getElementById("revenueBasis").value;
+      document.getElementById("errorBox").style.display = "none";
+      if (!startYm || !endYm) {
+        showError("시작 월과 종료 월을 모두 선택해주세요.");
+        return;
+      }
+      if (startYm > endYm) {
+        showError("시작 월은 종료 월보다 늦을 수 없습니다.");
+        return;
+      }
+      var requestVersion = ++statisticsRequestVersion;
+      setLoading(true);
+      google.script.run
+        .withSuccessHandler(function(data) {
+          if (requestVersion !== statisticsRequestVersion) return;
+          setLoading(false);
+          try {
+            currentStatistics = data;
+            renderStatistics(data);
+          } catch (renderError) {
+            currentStatistics = null;
+            document.getElementById("content").innerHTML = '<div class="empty">통계 화면을 구성하지 못했습니다.</div>';
+            showError("화면 처리 실패: " + (renderError && renderError.message ? renderError.message : renderError) + " 화면을 새로고침한 뒤 다시 조회해주세요.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          if (requestVersion !== statisticsRequestVersion) return;
+          setLoading(false);
+          document.getElementById("content").innerHTML = '<div class="empty">통계를 불러오지 못했습니다.</div>';
+          showError((error && error.message ? error.message : String(error || "통계 조회 중 알 수 없는 문제가 발생했습니다.")) + " 조회 기간과 집계 기준을 확인한 뒤 다시 시도해주세요. 계속되면 화면을 새로고침해주세요.");
+        })
+        .getPeriodStatistics(startYm, endYm, revenueBasis);
+    }
+
+    function card(label, value, sub, tone, icon) {
+      return '<div class="card ' + escapeHtml(tone || "") + '"><span class="card-icon">' + escapeHtml(icon || "•") + '</span><div class="label">' + escapeHtml(label) + '</div><div class="value">' +
+        escapeHtml(value) + '</div><div class="sub">' + escapeHtml(sub || "") + '</div></div>';
+    }
+
+    function renderStatistics(data) {
+      if (!data || !data.totals || !Array.isArray(data.months)) {
+        throw new Error("통계 응답 형식이 올바르지 않습니다.");
+      }
+      var t = data.totals;
+      document.getElementById("basis").textContent =
+        data.period.start + " ~ " + data.period.end + " · " + data.period.monthCount + "개월 · " +
+        data.basis.expectedTuition + " · " + data.basis.teacher + " · " + data.basis.revenue + " · " +
+        data.basis.paymentStatus + " · " + data.basis.salary;
+
+      var revenueBasisText = data.basis.revenueBasis === "PAY_DATE" ? "실제 납부일 기준" : "수업 귀속월 기준";
+      var latest = data.latestStatus || {month:"-",fullPaid:0,partialPaid:0,unpaid:0,outstanding:0};
+      var receivableSummary = data.receivableSummary || {studentMonths:0,uniqueStudents:0,uniqueUnpaidStudents:0};
+
+      var html = '<section class="cards">' +
+        card("총 수납", won(t.totalReceived), "수강료와 기타 수납 합계", "primary-kpi", "₩") +
+        card("수강료 실수납", won(t.tuitionReceived), revenueBasisText, "success-kpi", "✓") +
+        card("규정 예상 수강료", won(t.expectedTuition), "일할·휴가·형제할인 반영", "purple-kpi", "◎") +
+        card("현금흐름 수납률", numberText(t.collectionRate) + "%", revenueBasisText + " 수납 ÷ 규정 예상액", "success-kpi", "%") +
+        card("귀속 수납률", numberText(t.statusCollectionRate) + "%", "완납·부분·미납 판정과 같은 기준", "success-kpi", "◎") +
+        card("확인 필요 잔액", won(t.outstanding), "완납 허용오차를 제외한 학생·월 부족액", "warning-kpi", "!") +
+        card("기타 매출", won(t.otherRevenue), "특강비 등 수강료 외", "purple-kpi", "+") +
+        card("월평균 재원", numberText(t.averageActiveStudents) + "명", "학생-월 기준", "primary-kpi", "人") +
+        card("신규 / 퇴원", numberText(t.newStudents) + " / " + numberText(t.exitedStudents), "순증감 " + (t.netStudentChange >= 0 ? "+" : "") + numberText(t.netStudentChange), "", "↕") +
+        card("기간 완납 / 부분 / 미납", numberText(t.fullPaid) + " / " + numberText(t.partialPaid) + " / " + numberText(t.unpaid), "기간 누적 학생·월", "warning-kpi", "≡") +
+        card(latest.month + " 완납 / 부분 / 미납", numberText(latest.fullPaid) + " / " + numberText(latest.partialPaid) + " / " + numberText(latest.unpaid), "최신 조회 월 실제 인원", "warning-kpi", "●") +
+        card("기간 미수 대상", numberText(receivableSummary.uniqueStudents) + "명", "미납 " + numberText(receivableSummary.uniqueUnpaidStudents) + "명 · " + numberText(receivableSummary.studentMonths) + "학생·월", "warning-kpi", "人") +
+        card("휴가", numberText(t.vacationStudents) + "명·월", "총 " + numberText(t.vacationDays) + "일", "", "☂") +
+        card("수납 건수", numberText(t.paymentCount) + "건", "건당 평균 " + won(t.averagePayment), "primary-kpi", "#") +
+        card("초과 수납", won(t.overpaid), "월별 규정 예상액 초과분", "", "↑") +
+        card("귀속 확정 급여", won(t.salaryFinalAmount), "정산 귀속월 기준", "purple-kpi", "給") +
+        card("기간 실제 지급 급여", won(t.salaryPaidAmount), "총 수납의 " + numberText(t.salaryPaidRate) + "% · 지급일 기준", "purple-kpi", "₩") +
+        card("급여 미지급 잔액", won(t.salaryBalanceAmount), "조회기간 귀속 정산 잔액", "warning-kpi", "!") +
+        card("수납 - 지급급여", won(t.afterSalaryAmount), "총 수납에서 기간 실제 지급 차감", "primary-kpi", "=") +
+        '</section>';
+
+      html += '<section class="panel"><div class="panel-title"><span>월별 수납 추이 <small>선 위에 마우스를 올리면 금액을 확인할 수 있습니다.</small></span><span class="legend">' +
+        '<span><i class="dot" style="background:#9aa0a6"></i>규정 예상</span>' +
+        '<span><i class="dot" style="background:#1a73e8"></i>수강료 실수납</span>' +
+        '<span><i class="dot" style="background:#188038"></i>총 수납</span></span></div>' +
+        '<svg id="trendChart" viewBox="0 0 1000 290" preserveAspectRatio="xMidYMid meet"></svg></section>';
+
+      html += '<section class="panel"><div class="panel-title"><span>월별 상세 <small>예상액·실수납과 학생 변화를 비교합니다.</small></span></div><div class="table-wrap">' +
+        renderMonthlyTable(data.months) + '</div></section>';
+
+      html += '<section class="panel"><div class="panel-title"><span>미납·부분납 상세 <small>납부일 조회 기준과 무관하게 수업 귀속월 수강료로 판정합니다.</small></span></div>' +
+        '<div class="notice">최신 월 미수 대상은 ' + numberText((latest.receivables || []).length) + '명입니다. 아래 표는 선택 기간의 학생·월 내역이며 같은 학생이 여러 달 표시될 수 있습니다.</div>' +
+        '<div class="table-wrap">' + renderReceivableTable(data.receivables || []) + '</div></section>';
+
+      html += '<section class="panel"><div class="panel-title"><span>급여 지급 통계 <small>확정액은 귀속월, 실제 지급액은 지급일 기준입니다.</small></span></div>' +
+        '<div class="table-wrap">' + renderSalaryMonthlyTable(data.months) + '</div></section>';
+
+      html += '<div class="grid">' +
+        aggregatePanel("담당자별 통계", data.teachers, "담당자는 각 월 말 기준입니다.") +
+        aggregatePanel("학년별 통계", data.grades, "재원 학생-월과 수납을 합산합니다.") +
+        simpleAggregatePanel("결제수단", data.methods) +
+        simpleAggregatePanel("수납유형", data.types) +
+        salaryTeacherPanel(data.salaries || []) +
+        '</div>';
+
+      document.getElementById("content").innerHTML = html;
+      renderTrendChart(document.getElementById("trendChart"), data.months);
+    }
+
+    function renderMonthlyTable(months) {
+      var rows = months.map(function(m) {
+        return '<tr><td>' + escapeHtml(m.month) + '</td><td>' + numberText(m.activeStudents) + '</td>' +
+          '<td class="money">' + won(m.expectedTuition) + '</td><td class="money">' + won(m.tuitionReceived) + '</td>' +
+          '<td>' + numberText(m.collectionRate) + '%</td><td>' + numberText(m.statusCollectionRate) + '%</td><td class="money">' + won(m.otherRevenue) + '</td>' +
+          '<td class="money">' + won(m.totalReceived) + '</td><td>' + numberText(m.fullPaid) + '</td>' +
+          '<td>' + numberText(m.partialPaid) + '</td><td>' + numberText(m.unpaid) + '</td>' +
+          '<td>' + numberText(m.newStudents) + '</td><td>' + numberText(m.exitedStudents) + '</td>' +
+          '<td>' + numberText(m.vacationDays) + '</td></tr>';
+      }).join("");
+      return '<table><thead><tr><th>월</th><th>재원</th><th>규정 예상</th><th>수강료 실수납</th><th>현금흐름률</th><th>귀속 수납률</th>' +
+        '<th>기타 매출</th><th>총 수납</th><th>완납</th><th>부분</th><th>미납</th><th>신규</th><th>퇴원</th><th>휴가일</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    function renderReceivableTable(list) {
+      if (!list.length) return '<div class="empty" style="padding:35px 10px;">선택 기간에 미납·부분납 학생이 없습니다.</div>';
+      var rows = list.map(function(item) {
+        return '<tr><td>' + escapeHtml(item.month) + '</td><td><button type="button" class="student-info-link" data-student-modal-id="' + escapeHtml(item.studentId) + '">' + escapeHtml(item.name) + '</button></td><td>' + escapeHtml(item.grade) + '</td>' +
+          '<td>' + escapeHtml(item.teacher) + '</td><td>' + escapeHtml(item.status) + '</td><td class="money">' + won(item.expected) + '</td>' +
+          '<td class="money">' + won(item.received) + '</td><td class="money">' + won(item.outstanding) + '</td></tr>';
+      }).join("");
+      return '<table><thead><tr><th>귀속월</th><th>학생</th><th>학년</th><th>담당</th><th>상태</th><th>예상</th><th>귀속 수납</th><th>부족액</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    function renderSalaryMonthlyTable(months) {
+      var rows = months.map(function(m) {
+        return '<tr><td>' + escapeHtml(m.month) + '</td><td class="money">' + won(m.salaryFinalAmount) + '</td>' +
+          '<td class="money">' + won(m.salaryPaidAmount) + '</td><td class="money">' + won(m.salaryBalanceAmount) + '</td>' +
+          '<td class="money">' + won(m.afterSalaryAmount) + '</td></tr>';
+      }).join("");
+      return '<table><thead><tr><th>월</th><th>귀속 확정 급여</th><th>해당 월 실제 지급</th><th>귀속 미지급 잔액</th><th>총 수납-실제 지급</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    function salaryTeacherPanel(list) {
+      var rows = list.map(function(item) {
+        return '<tr><td>' + escapeHtml(item.name) + '</td><td class="money">' + won(item.finalAmount) + '</td>' +
+          '<td class="money">' + won(item.paidAmount) + '</td><td class="money">' + won(item.balanceAmount) + '</td></tr>';
+      }).join("");
+      return '<section class="panel"><div class="panel-title">원장별 급여 통계</div><div class="notice">확정 급여와 실제 지급은 서로 다른 시점 기준입니다.</div>' +
+        '<div class="table-wrap"><table><thead><tr><th>원장</th><th>귀속 확정</th><th>기간 지급</th><th>귀속 잔액</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>';
+    }
+
+    function aggregatePanel(title, list, note) {
+      var max = Math.max.apply(null, (list || []).map(function(item) { return Number(item.totalReceived) || 0; }).concat([1]));
+      var rows = (list || []).map(function(item) {
+        var rate = item.expectedTuition > 0 ? Math.round(item.tuitionReceived * 1000 / item.expectedTuition) / 10 : 0;
+        var width = Math.max(1, Math.round((Number(item.totalReceived) || 0) * 100 / max));
+        return '<tr><td class="bar-cell">' + escapeHtml(item.name) + '<div class="bar"><span style="width:' + width + '%"></span></div></td>' +
+          '<td>' + numberText(item.activeStudents) + '</td><td class="money">' + won(item.expectedTuition) + '</td>' +
+          '<td class="money">' + won(item.tuitionReceived) + '</td><td>' + numberText(rate) + '%</td>' +
+          '<td class="money">' + won(item.otherRevenue) + '</td><td class="money">' + won(item.totalReceived) + '</td></tr>';
+      }).join("");
+      return '<section class="panel"><div class="panel-title">' + escapeHtml(title) + '</div><div class="notice">' + escapeHtml(note) +
+        '</div><div class="table-wrap"><table><thead><tr><th>구분</th><th>재원·월</th><th>규정 예상</th><th>수강료</th><th>수납률</th><th>기타</th><th>총 수납</th></tr></thead><tbody>' +
+        rows + '</tbody></table></div></section>';
+    }
+
+    function simpleAggregatePanel(title, list) {
+      var max = Math.max.apply(null, (list || []).map(function(item) { return Number(item.totalReceived) || 0; }).concat([1]));
+      var total = (list || []).reduce(function(sum, item) { return sum + (Number(item.totalReceived) || 0); }, 0);
+      var rows = (list || []).map(function(item) {
+        var ratio = total > 0 ? Math.round(item.totalReceived * 1000 / total) / 10 : 0;
+        var width = Math.max(1, Math.round((Number(item.totalReceived) || 0) * 100 / max));
+        return '<tr><td class="bar-cell">' + escapeHtml(item.name) + '<div class="bar"><span style="width:' + width + '%"></span></div></td>' +
+          '<td>' + numberText(item.paymentCount) + '</td><td class="money">' + won(item.totalReceived) + '</td><td>' + ratio + '%</td></tr>';
+      }).join("");
+      return '<section class="panel"><div class="panel-title">' + escapeHtml(title) +
+        '</div>' + pieChartHtml(list || [], total) +
+        '<div class="table-wrap"><table><thead><tr><th>구분</th><th>건수</th><th>금액</th><th>비중</th></tr></thead><tbody>' +
+        rows + '</tbody></table></div></section>';
+    }
+
+    function pieChartHtml(list, total) {
+      var colors = ["#1a73e8","#188038","#f29900","#a142f4","#d93025","#00acc1","#5f6368","#e37400","#3cba54","#8d6e63"];
+      if (!list.length || total <= 0) {
+        return '<div class="empty" style="padding:35px 10px;">표시할 수납 데이터가 없습니다.</div>';
+      }
+      var cursor = 0;
+      var segments = [];
+      var legend = [];
+      list.forEach(function(item, index) {
+        var amount = Number(item.totalReceived) || 0;
+        if (amount <= 0) return;
+        var ratio = amount * 100 / total;
+        var end = cursor + ratio;
+        var color = colors[index % colors.length];
+        segments.push(color + " " + cursor.toFixed(2) + "% " + end.toFixed(2) + "%");
+        legend.push('<div class="pie-legend-row"><i class="pie-swatch" style="background:' + color + '"></i>' +
+          '<strong>' + escapeHtml(item.name) + '</strong><span class="money">' + won(amount) + '</span>' +
+          '<span class="pie-ratio">' + (Math.round(ratio * 10) / 10) + '%</span></div>');
+        cursor = end;
+      });
+      return '<div class="pie-layout"><div class="pie-chart" style="background:conic-gradient(' + segments.join(",") + ')">' +
+        '<div class="pie-center"><strong>' + won(total) + '</strong><span>기간 합계</span></div></div>' +
+        '<div class="pie-legend">' + legend.join("") + '</div></div>';
+    }
+
+    function renderTrendChart(svg, months) {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      if (!months.length) return;
+      var ns = "http://www.w3.org/2000/svg";
+      var width = 1000, height = 290, left = 70, right = 25, top = 20, bottom = 45;
+      var plotW = width - left - right, plotH = height - top - bottom;
+      var maxValue = Math.max.apply(null, months.map(function(m) {
+        return Math.max(m.expectedTuition, m.tuitionReceived, m.totalReceived);
+      }).concat([1]));
+
+      function add(tag, attrs, text) {
+        var el = document.createElementNS(ns, tag);
+        Object.keys(attrs || {}).forEach(function(key) { el.setAttribute(key, attrs[key]); });
+        if (text != null) el.textContent = text;
+        svg.appendChild(el);
+        return el;
+      }
+      for (var g = 0; g <= 4; g++) {
+        var y = top + plotH * g / 4;
+        add("line", {x1:left,y1:y,x2:width-right,y2:y,stroke:"#e5e8eb","stroke-width":"1"});
+        add("text", {x:left-8,y:y+4,"text-anchor":"end",fill:"#777","font-size":"11"}, Math.round(maxValue * (4-g) / 4 / 10000) + "만");
+      }
+      var series = [
+        {key:"expectedTuition",color:"#9aa0a6"},
+        {key:"tuitionReceived",color:"#1a73e8"},
+        {key:"totalReceived",color:"#188038"}
+      ];
+      series.forEach(function(line) {
+        var points = months.map(function(m, index) {
+          var x = months.length === 1 ? left + plotW / 2 : left + plotW * index / (months.length - 1);
+          var y = top + plotH - (Number(m[line.key]) || 0) * plotH / maxValue;
+          return x + "," + y;
+        }).join(" ");
+        add("polyline", {points:points,fill:"none",stroke:line.color,"stroke-width":"3","stroke-linejoin":"round"});
+        months.forEach(function(m, index) {
+          var x = months.length === 1 ? left + plotW / 2 : left + plotW * index / (months.length - 1);
+          var y = top + plotH - (Number(m[line.key]) || 0) * plotH / maxValue;
+          var circle = add("circle", {cx:x,cy:y,r:"3.5",fill:line.color});
+          var title = document.createElementNS(ns, "title");
+          title.textContent = m.month + " · " + won(m[line.key]);
+          circle.appendChild(title);
+        });
+      });
+      var labelStep = Math.max(1, Math.ceil(months.length / 12));
+      months.forEach(function(m, index) {
+        if (index % labelStep !== 0 && index !== months.length - 1) return;
+        var x = months.length === 1 ? left + plotW / 2 : left + plotW * index / (months.length - 1);
+        add("text", {x:x,y:height-16,"text-anchor":"middle",fill:"#666","font-size":"11"}, m.month.substring(2));
+      });
+    }
+
+    function downloadCsv() {
+      if (!currentStatistics || !currentStatistics.months) {
+        showError("먼저 통계를 조회해주세요.");
+        return;
+      }
+      var headers = ["월","재원","규정예상","수강료실수납","현금흐름수납률","귀속수강료수납","귀속수납률","기타매출","총수납","완납","부분납","미납","신규","퇴원","휴가일","귀속확정급여","실제지급급여","급여잔액","수납차감후"];
+      var rows = currentStatistics.months.map(function(m) {
+        return [m.month,m.activeStudents,m.expectedTuition,m.tuitionReceived,m.collectionRate,m.attributedTuitionReceived,m.statusCollectionRate,m.otherRevenue,m.totalReceived,m.fullPaid,m.partialPaid,m.unpaid,m.newStudents,m.exitedStudents,m.vacationDays,m.salaryFinalAmount,m.salaryPaidAmount,m.salaryBalanceAmount,m.afterSalaryAmount];
+      });
+      var csv = "\ufeff" + [headers].concat(rows).map(function(row) {
+        return row.map(function(value) { return '"' + String(value == null ? "" : value).replace(/"/g, '""') + '"'; }).join(",");
+      }).join("\r\n");
+      var blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+      var link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "기간통계_" + currentStatistics.period.start + "_" + currentStatistics.period.end + ".csv";
+      link.click();
+      setTimeout(function() { URL.revokeObjectURL(link.href); }, 1000);
+    }
+
+    window.addEventListener("load", initializeRange);
+  </script>
+<?!= includeHtml_("StudentInfoModalCommon"); ?>
+<?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+      /* =================================================================
+         [1] 화면용 기본 스타일
+         ================================================================= */
+      body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; background-color: #f1f3f4; margin: 0; }
+      .salary-nav { display:flex; align-items:center; gap:8px; margin-bottom:16px; padding:10px 14px; border-radius:10px; color:#fff; background:linear-gradient(120deg,#17365d,#1a73e8); box-shadow:0 3px 12px rgba(23,54,93,.18); }
+      .salary-nav-title { margin-right:auto; font-size:18px; font-weight:bold; }
+      .salary-tab { border:1px solid rgba(255,255,255,.3); border-radius:18px; padding:8px 14px; color:#fff; background:rgba(255,255,255,.12); cursor:pointer; font-weight:bold; }
+      .salary-tab.active { color:#174ea6; background:#fff; }
+      body.read-only .admin-tab { display:none !important; }
+      .salary-admin-page { display:none; }
+      .admin-panel { background:#fff; border:1px solid #dfe4ea; border-radius:12px; padding:16px; margin-bottom:14px; box-shadow:0 2px 8px rgba(40,64,100,.06); }
+      .admin-panel-head { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+      .admin-panel-head strong { color:#17365d; font-size:16px; }
+      .admin-panel-head .right { margin-left:auto; display:flex; gap:7px; }
+      .admin-panel-head p { margin:3px 0 0; color:#5f6368; font-size:11px; }
+      .admin-grid { display:grid; grid-template-columns:repeat(4,minmax(140px,1fr)); gap:10px; }
+      .admin-batch-grid { display:grid; grid-template-columns:170px 170px minmax(220px,1fr) auto; gap:10px; align-items:end; }
+      .admin-field label { display:block; margin-bottom:4px; color:#5f6368; font-size:11px; font-weight:bold; }
+      .admin-field input,.admin-field select { width:100%; box-sizing:border-box; }
+      .admin-span2 { grid-column:span 2; }
+      .admin-actions { display:flex; gap:7px; align-items:end; }
+      .admin-primary,.admin-secondary { border:0; border-radius:7px; padding:9px 13px; cursor:pointer; font-weight:bold; }
+      .admin-primary { color:#fff; background:#1a73e8; }
+      .admin-secondary { color:#315278; background:#edf2f8; }
+      .admin-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
+      .admin-kpi { padding:13px; border-radius:10px; background:#fff; border-left:4px solid #1a73e8; box-shadow:0 2px 8px rgba(40,64,100,.06); }
+      .admin-kpi span { display:block; color:#5f6368; font-size:11px; font-weight:bold; }
+      .admin-kpi strong { display:block; margin-top:5px; color:#17365d; font-size:20px; }
+      .admin-table-wrap { overflow:auto; border:1px solid #edf0f3; border-radius:8px; }
+      .admin-table-wrap table { min-width:950px; font-size:12px; }
+      .admin-status { display:inline-block; padding:3px 7px; border-radius:12px; background:#e8f0fe; color:#174ea6; font-weight:bold; font-size:10px; }
+      .admin-status.paid { background:#e6f4ea; color:#137333; }
+      .admin-status.cancelled { background:#f1f3f4; color:#5f6368; }
+      .admin-primary-panel { border-color:#c7d8f4; background:linear-gradient(135deg,#fff,#f7faff); }
+      .admin-details { margin:0; }
+      .admin-details > summary { display:flex; align-items:center; gap:10px; cursor:pointer; color:#17365d; font-weight:bold; list-style:none; }
+      .admin-details > summary::-webkit-details-marker { display:none; }
+      .admin-details > summary::before { content:"▶"; color:#1a73e8; font-size:10px; transition:transform .15s; }
+      .admin-details[open] > summary::before { transform:rotate(90deg); }
+      .admin-details-summary-note { margin-left:auto; color:#80868b; font-size:10px; font-weight:normal; }
+      .admin-details-body { margin-top:14px; padding-top:14px; border-top:1px solid #edf0f3; }
+      .admin-filter-bar { margin-left:auto; display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+      .admin-filter-bar input,.admin-filter-bar select { min-width:125px; }
+      
+      /* 컨트롤 패널 */
+      .control-panel { 
+        background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+        display: flex; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap;
+      }
+      select, input { padding: 8px; border: 1px solid #dadce0; border-radius: 4px; font-size: 14px; }
+      
+      .btn-search { background: #1a73e8; color: white; border: none; padding: 8px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+      .btn-print { background: #5f6368; color: white; border: none; padding: 8px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px; }
+      .btn-print-all { background: #188038; color: white; border: none; padding: 8px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: auto; }
+      
+      .btn-search:hover { background: #1558b0; }
+      .btn-print:hover { background: #444; }
+      .btn-print-all:hover { background: #13662d; }
+      .btn-close { background: #f1f3f4; color: #333 !important; border: 1px solid #ccc; padding: 8px 20px; border-radius: 4px; font-weight: bold; text-decoration: none; display: inline-block; text-align: center; box-sizing: border-box; margin-left: 10px; }
+      .btn-close:hover { background: #e8eaed; }
+      .btn-finalize { float:right; background:#7b1fa2; color:white; border:0; border-radius:5px; padding:7px 12px; cursor:pointer; font-weight:bold; }
+      .btn-finalize:disabled { background:#5f6368; cursor:default; }
+      .btn-finalize-all { background:#7b1fa2; color:#fff; border:0; border-radius:6px; padding:10px 16px; cursor:pointer; font-weight:bold; }
+      .btn-finalize-all:disabled { background:#9aa0a6; cursor:default; }
+      .salary-policy { clear:both; margin:8px 0 14px; padding:9px 12px; border-radius:6px; background:#fff8e1; border:1px solid #f9ab00; color:#7a4d00; font-size:12px; }
+      .salary-policy.saved { background:#e6f4ea; border-color:#34a853; color:#137333; }
+      .preview-status { float:right; font-weight:bold; }
+      .draft-watermark { position:relative; }
+      .draft-watermark::before { content:"미확정 정산안"; display:none; position:absolute; z-index:5; top:105px; left:50%; transform:translateX(-50%) rotate(-18deg); color:rgba(217,48,37,.16); font-size:64px; font-weight:bold; white-space:nowrap; pointer-events:none; }
+      .pdf-mode.draft-watermark::before,.pdf-mode .draft-watermark::before { display:block; }
+      .snapshot-warning { padding:28px; border:2px solid #d93025; border-radius:10px; background:#fce8e6; color:#8a1c14; text-align:center; font-weight:bold; }
+      .summary-only-note { padding:24px; border:1px solid #f9ab00; border-radius:10px; background:#fff8e1; color:#7a4d00; text-align:center; }
+      #preparedExportContainer { display:none; }
+      .btn-direct { background:#fce8e6; color:#c5221f; border:1px solid #f4b7b2; border-radius:4px; padding:4px 6px; cursor:pointer; font-size:10px; }
+      tr.salary-excluded { opacity:.55; background:#f1f3f4; }
+      tr.salary-excluded td:not(.note-cell):not(.direct-col) { text-decoration:line-through; }
+      tr.salary-excluded .btn-direct { text-decoration:none; background:#e6f4ea; color:#137333; border-color:#a8dab5; }
+      .direct-note { display:none; margin-top:4px; color:#c5221f; font-size:11px; font-weight:bold; text-decoration:none; }
+      tr.salary-excluded .direct-note { display:block; }
+      body.read-only .btn-finalize, body.read-only .btn-finalize-all, body.read-only .adjust-btn-text { display:none !important; }
+      body.read-only .btn-direct { display:none !important; }
+      body.read-only .card.adjust { cursor:default; pointer-events:none; }
+
+      /* 요약 카드 (5개) */
+      .summary-cards { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+      .card { flex: 1; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; border-top: 4px solid #1a73e8; min-width: 120px; }
+      
+      .card-title { font-size: 11px; color: #5f6368; font-weight: bold; margin-bottom: 5px; }
+      .card-value { font-size: 18px; font-weight: bold; color: #333; }
+      .card-value.final { color: #1a73e8; font-size: 20px; }
+      
+      /* 조정(누락/공제) 카드 */
+      .card.adjust { border-top-color: #f9ab00; background-color: #fffdf5; cursor: pointer; transition: 0.2s; }
+      .card.adjust:hover { background-color: #fff8e1; }
+      .adjust-btn-text { font-size: 12px; color: #f9ab00; font-weight: bold; text-decoration: underline; margin-top: 4px; }
+
+      /* 공제 카드 (입력창) */
+      .card.deduct { border-top-color: #d93025; background-color: #fff8f8; }
+      .input-deduct { 
+        width: 100%; text-align: center; font-size: 16px; font-weight: bold; color: #d93025; 
+        border: none; background: transparent; border-bottom: 2px dashed #d93025; padding: 2px;
+      }
+      .input-deduct:focus { outline: none; border-bottom: 2px solid #d93025; }
+
+      /* 실 수령액 카드 */
+      .card.highlight { border-top-color: #ea4335; border: 2px solid #ea4335; }
+
+      /* 테이블 스타일 */
+      .table-container { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; margin-bottom: 40px; }
+      table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 12px; }
+      th { background-color: #f8f9fa; color: #444; font-weight: bold; padding: 8px 4px; border-bottom: 2px solid #ddd; white-space: nowrap; cursor: pointer; user-select: none; }
+      td { padding: 6px 4px; border-bottom: 1px solid #eee; text-align: center; vertical-align: middle; }
+      tr:hover { background-color: #f8fbff; }
+
+      .badge { padding: 2px 5px; border-radius: 12px; font-size: 10px; font-weight: bold; }
+      .badge-new { background: #fff9c4; color: #f9a825; border: 1px solid #fff59d; } 
+      .badge-end { background: #fce8e6; color: #c5221f; }
+      .badge-planned-exit { background:#fef7e0; color:#9a5700; border:1px solid #f9ab00; margin-right:4px; }
+      .money { font-family: 'Roboto', sans-serif; font-weight: bold; color: #333; }
+      .money-plus { color: #137333; font-size: 11px; } 
+      .note-cell { text-align: left; font-size: 10px; color: #666; line-height: 1.3; white-space: pre-wrap; }
+
+      /* =================================================================
+         [2] 모달 (팝업) 스타일
+         ================================================================= */
+      .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center; }
+      .modal-box { background: white; width: 450px; max-width: 95%; border-radius: 8px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+      .modal-header { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+      .modal-title { font-size: 16px; font-weight: bold; color: #333; }
+      .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #999; }
+      
+      .modal-input-group { margin-bottom: 10px; }
+      .modal-label { font-size: 12px; font-weight: bold; color: #555; display: block; margin-bottom: 4px; }
+      .modal-input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; }
+      
+      .modal-options { display: flex; gap: 15px; margin: 10px 0; background: #f8f9fa; padding: 10px; border-radius: 4px; }
+      .checkbox-label { font-size: 12px; display: flex; align-items: center; cursor: pointer; }
+      .checkbox-label input { margin-right: 5px; }
+
+      .modal-list { max-height: 150px; overflow-y: auto; border: 1px solid #eee; margin-bottom: 15px; border-radius: 4px; }
+      .modal-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+      .item-desc { flex: 1; text-align: left; }
+      .item-amt { font-weight: bold; margin-left: 10px; }
+      .item-del { color: red; cursor: pointer; margin-left: 10px; }
+
+      .modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
+      .btn-add-item { background: #34a853; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 15px; }
+      .btn-save { background: #1a73e8; color: white; border: none; padding: 8px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+      .btn-cancel { background: #999; color: white; border: none; padding: 8px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+      .salary-confirm-box { width:620px; max-height:88vh; display:flex; flex-direction:column; }
+      .salary-confirm-summary { padding:14px 16px; margin-bottom:12px; border-radius:9px; background:#e8f0fe; color:#174ea6; text-align:center; }
+      .salary-confirm-summary span { display:block; font-size:12px; font-weight:bold; }
+      .salary-confirm-summary strong { display:block; margin-top:3px; font-size:23px; }
+      .salary-confirm-list { min-height:0; overflow-y:auto; padding-right:3px; }
+      .salary-confirm-card { margin-bottom:10px; padding:13px 14px; border:1px solid #dfe4ea; border-radius:9px; background:#fff; }
+      .salary-confirm-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .salary-confirm-teacher { color:#17365d; font-size:15px; font-weight:bold; }
+      .salary-confirm-amount { font-size:17px; font-weight:bold; white-space:nowrap; }
+      .salary-confirm-adjustment-total { margin-left:6px; padding:3px 7px; border-radius:12px; color:#137333; background:#e6f4ea; font-size:10px; }
+      .salary-confirm-adjustment-total.minus { color:#c5221f; background:#fce8e6; }
+      .salary-confirm-adjustments { margin-top:10px; padding:9px 10px; border-radius:7px; background:#f8f9fa; }
+      .salary-confirm-adjustment-row { display:grid; grid-template-columns:minmax(110px,auto) 1fr auto; gap:8px; padding:5px 0; border-bottom:1px solid #e8eaed; font-size:11px; align-items:start; }
+      .salary-confirm-adjustment-row:last-child { border-bottom:0; }
+      .salary-confirm-adjustment-label { color:#3c4043; font-weight:bold; }
+      .salary-confirm-adjustment-note { color:#5f6368; overflow-wrap:anywhere; }
+      .salary-confirm-adjustment-money { font-weight:bold; white-space:nowrap; }
+      .salary-confirm-none { margin-top:8px; color:#80868b; font-size:11px; }
+      .salary-confirm-warning { margin:10px 0 14px; color:#7a4d00; font-size:11px; text-align:center; }
+
+      /* 화면 표시용 헤더 및 상세 내역 스타일 (화면에서도 보이도록 수정) */
+      .print-header { display: block; margin-bottom: 15px; border-bottom: 2px solid #1a73e8; padding-bottom: 8px; }
+      .print-header h1 { margin: 0; font-size: 18px; color: #333; }
+      .print-header h2 { margin: 5px 0 0 0; font-size: 14px; font-weight: bold; color: #1a73e8; }
+      .print-details { display: block; margin-top: 15px; background: #f8f9fa; padding: 10px; border-radius: 6px; }
+
+      /* =================================================================
+         [3] 인쇄 설정 (세로 방향 + 상단 여백 확보)
+         ================================================================= */
+      @media print {
+        @page { 
+          size: portrait; 
+          margin: 15mm 10mm; /* ★ [핵심] 상하 여백을 15mm로 늘려서 잘림 방지 */
+        }
+        
+        body { 
+          background: white; padding: 0; margin: 0; 
+          -webkit-print-color-adjust: exact; 
+          zoom: 0.85; /* 세로폭 맞춤 축소 */
+        }
+        
+        .salary-nav, .salary-admin-page, .control-panel, .btn-print, .btn-print-all, .btn-finalize, .btn-direct, .direct-col, .modal-overlay, .screen-only-audit { display: none !important; }
+        body.print-prepared #salaryCalcPage { display:none !important; }
+        body.print-prepared #preparedExportContainer { display:block !important; }
+        .draft-watermark::before { display:block !important; }
+        tr.salary-excluded { display:table-row !important; opacity:.65; background:#f1f3f4 !important; }
+        
+        /* 각 원장님 섹션 */
+        .print-section {
+          padding-top: 20px; /* ★ [핵심] 내용 시작 전 강제 여백 추가 */
+          page-break-after: always;
+        }
+        .print-section:last-child { page-break-after: auto; }
+
+        .table-container { box-shadow: none; border: none; overflow: visible; margin-bottom: 0; }
+        table { width: 100% !important; min-width: 0 !important; font-size: 11px; }
+        th, td { padding: 4px 2px; border: 1px solid #ccc; }
+        th { background-color: #eee !important; color: black; }
+
+        /* 카드 인쇄 스타일 */
+        .summary-cards { gap: 5px; margin-bottom: 15px; border: 1px solid #ccc; padding: 10px; border-radius: 4px; page-break-inside: avoid; display: flex; }
+        .card { box-shadow: none; border: none; padding: 5px; border-right: 1px solid #eee; min-width: 0; }
+        .card:last-child { border-right: none; }
+        .adjust-btn-text { display: none; }
+
+        /* 인쇄용 헤더 */
+        .print-header { display: block; text-align: center; margin-bottom: 10px; }
+        .print-header h1 { margin: 0; font-size: 22px; color: #333; }
+        .print-header h2 { margin: 5px 0; font-size: 16px; font-weight: normal; color: #666; }
+
+        /* 조정 상세 내역 */
+        .print-details { display: block; margin-top: 20px; page-break-inside: avoid; }
+        .print-details h3 { font-size: 14px; border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 5px; }
+        .detail-row { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; border-bottom: 1px dashed #eee; }
+
+        table { page-break-inside: auto; }
+        tr { page-break-inside: avoid; }
+        thead { display: table-header-group; }
+      }
+
+      .pdf-mode .print-header,
+      .pdf-mode .print-details { display: block !important; }
+      
+      .pdf-mode .summary-cards { gap: 5px; margin-bottom: 15px; border: 1px solid #ccc; padding: 10px; border-radius: 4px; display: flex; }
+      .pdf-mode .card { box-shadow: none; border: none; padding: 5px; border-right: 1px solid #eee; min-width: 0; }
+      .pdf-mode .card:last-child { border-right: none; }
+      .pdf-mode .adjust-btn-text { display: none !important; }
+
+      /* [수정] PDF 엔진이 내용을 꽉 채워 찍도록 여백과 글자 간격을 더 압축합니다 */
+      .pdf-mode { 
+        background: white !important; 
+        padding: 8px !important; 
+        margin: 0 !important; 
+        width: 1120px !important;
+        box-sizing: border-box !important;
+      }
+      .pdf-mode.print-section,
+      .pdf-mode .print-section {
+        width: 1120px !important;
+        box-sizing: border-box !important;
+        page-break-after: always;
+        break-after: page;
+      }
+      .pdf-mode.print-section:last-child,
+      .pdf-mode .print-section:last-child {
+        page-break-after: auto;
+        break-after: auto;
+      }
+      .pdf-mode table { 
+        width: 100% !important; 
+        min-width: 0 !important;
+        font-size: 9px !important;
+        table-layout: fixed !important; 
+      }
+      /* 셀 안의 여백을 더 줄여서 오른쪽 공간을 만듭니다 */
+      .pdf-mode th, .pdf-mode td { 
+        padding: 2px 1px !important; 
+        border: 1px solid #ccc; 
+        word-break: break-all; 
+      }
+      
+      .pdf-mode .table-container { box-shadow: none; border: none; overflow: visible; margin-bottom: 0; }
+      .pdf-mode th { background-color: #eee !important; color: black; }
+      @media(max-width:850px) { .salary-nav{flex-wrap:wrap}.salary-nav-title{width:100%}.admin-grid,.admin-batch-grid{grid-template-columns:1fr 1fr}.admin-summary{grid-template-columns:1fr 1fr}.admin-span2{grid-column:span 2}.admin-record-head{align-items:flex-start;flex-direction:column}.admin-filter-bar{margin-left:0;width:100%} }
+    </style>
+  </head>
+  <body class="read-only">
+
+    <div class="salary-nav">
+      <div class="salary-nav-title">💰 급여 관리</div>
+      <button class="salary-tab active" onclick="showSalaryPage('calc',this)">월별 정산</button>
+      <button class="salary-tab admin-tab" onclick="showSalaryPage('records',this)">확정·지급 관리</button>
+    </div>
+
+    <div id="salaryCalcPage">
+    <div class="control-panel">
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#555;">정산 월</label><br>
+        <input type="month" id="targetMonth" onchange="fetchAllData()">
+      </div>
+      <div>
+        <label style="font-size:12px; font-weight:bold; color:#555;">담당 원장 (필터링)</label><br>
+        <select id="teacherSelect" onchange="filterTeacher()">
+          <option value="">전체 원장님 보기</option>
+        </select>
+      </div>
+      <button id="finalizeMonthBtn" class="btn-finalize-all" onclick="finalizeMonthSettlements()">✅ 조회 월 전체 확정</button>
+      <button id="exportBtn" class="btn-print-all" onclick="openExportModal()" style="margin-left:auto;">🖨️ 인쇄 / 📄 PDF / 🖼️ 이미지 저장</button>
+      
+      <a href="<?= ScriptApp.getService().getUrl() ?>" target="_top" class="btn-close" onclick="return smartClose(event);">✖ 닫기</a>
+    </div>
+
+    <div id="resultContainer">
+      <div style="text-align:center; padding:50px; color:#999; background:white; border-radius:8px;">
+        원장님을 선택하고 [조회]하거나, [전체 원장 일괄 인쇄]를 눌러주세요.
+      </div>
+    </div>
+    </div>
+
+    <section id="salaryAdminPage" class="salary-admin-page">
+      <div class="admin-summary">
+        <div class="admin-kpi"><span>조회 정산</span><strong id="smCountAll">-</strong></div>
+        <div class="admin-kpi"><span>조회 지급 완료</span><strong id="smCountPaid">-</strong></div>
+        <div class="admin-kpi"><span>미지급 잔액</span><strong id="smBalanceTotal">-</strong></div>
+        <div class="admin-kpi"><span>조회 목록 확정액</span><strong id="smFinalTotal">-</strong></div>
+      </div>
+      <div class="admin-panel admin-primary-panel">
+        <div class="admin-panel-head"><div><strong>월 급여 일괄 지급</strong><p>선택한 월의 확정 급여 가운데 남은 지급 잔액만 한 번에 처리합니다.</p></div></div>
+        <div class="admin-batch-grid">
+          <div class="admin-field"><label>일괄 지급 대상 월</label><input id="smBatchPaymentYm" type="month"></div>
+          <div class="admin-field"><label>일괄 지급일</label><input id="smBatchPaymentDate" type="date"></div>
+          <div class="admin-field"><label>메모</label><input id="smBatchPaymentMemo" maxlength="500" placeholder="선택 입력"></div>
+          <div class="admin-actions"><button id="smBatchPaymentBtn" class="admin-primary" onclick="salaryAdminPayMonth()">해당 월 잔액 전체 지급</button></div>
+        </div>
+      </div>
+      <div class="admin-panel">
+        <details class="admin-details">
+          <summary>개별 지급·차액 조정 <span class="admin-details-summary-note">일부 지급, 지급 취소, 확정액 보정</span></summary>
+          <div class="admin-details-body admin-grid">
+          <div class="admin-field admin-span2"><label>정산 기록</label><select id="smSettlement"></select></div>
+          <div class="admin-field"><label>처리 유형</label><select id="smAction"><option value="PAYMENT_ADD">지급 추가</option><option value="PAYMENT_SUB">잘못 기록한 지급액 차감</option><option value="FINAL_ADD">확정 급여 추가 조정</option><option value="FINAL_SUB">확정 급여 공제 조정</option></select></div>
+          <div class="admin-field"><label>처리 금액</label><input id="smAmount" type="number" min="1"></div>
+          <div class="admin-field"><label>처리일</label><input id="smDate" type="date"></div>
+          <div class="admin-field admin-span2"><label>사유·메모</label><input id="smMemo" maxlength="500" placeholder="보정 작업은 사유 필수"></div>
+          <div class="admin-actions"><button id="smSavePaymentBtn" class="admin-primary" onclick="salaryAdminSavePayment()">처리 기록 추가</button></div>
+          </div>
+        </details>
+      </div>
+      <div class="admin-panel">
+        <details class="admin-details"><summary>과거 급여 기록 직접 입력 <span class="admin-details-summary-note">초기 이관·누락 기록용</span></summary>
+        <div class="admin-details-body admin-grid">
+          <div class="admin-field"><label>정산 월</label><input id="smHistoryYm" type="month"></div>
+          <div class="admin-field"><label>원장</label><select id="smHistoryTeacher"></select></div>
+          <div class="admin-field"><label>확정 급여</label><input id="smHistoryFinal" type="number" min="0"></div>
+          <div class="admin-field"><label>실제 지급액</label><input id="smHistoryPaid" type="number" min="0" value="0"></div>
+          <div class="admin-field"><label>지급일</label><input id="smHistoryPaidDate" type="date"></div>
+          <div class="admin-field admin-span2"><label>메모</label><input id="smHistoryMemo" maxlength="500"></div>
+          <div class="admin-actions"><button id="smSaveHistoryBtn" class="admin-primary" onclick="salaryAdminSaveHistory()">과거 기록 저장</button></div>
+        </div><div style="margin-top:8px;color:#5f6368;font-size:11px">과거 수동 기록은 학생별 계산 근거 없이 확정액·지급액만 보존합니다.</div></details>
+      </div>
+      <div class="admin-panel">
+        <div class="admin-panel-head admin-record-head"><strong>급여 정산 기록</strong><div class="admin-filter-bar"><input id="smFilterMonth" type="month" title="정산 월" onchange="salaryAdminRender()"><input id="smFilterText" placeholder="원장명 검색" oninput="salaryAdminRender()"><select id="smFilterStatus" onchange="salaryAdminRender()"><option value="">전체 상태</option><option value="지급완료">지급완료</option><option value="미지급">미지급·일부지급</option><option value="취소">취소</option></select><button class="admin-secondary" onclick="salaryAdminRunCheck()">데이터 점검</button></div></div>
+        <div id="smHistoryList" style="text-align:center;padding:30px;color:#777">정산 기록을 불러오는 중...</div>
+      </div>
+    </section>
+    <div id="preparedExportContainer"></div>
+
+    <div id="adjustModal" class="modal-overlay">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">📝 정산 조정 (누락/공제) 입력</span>
+          <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        
+        <div style="background:#f1f3f4; padding:10px; border-radius:6px; margin-bottom:10px;">
+          <div class="modal-input-group">
+            <span class="modal-label">조정 유형</span>
+            <select id="adjType" class="modal-input">
+              <option value="ADD_OMIT">➕ 전 달 지급 누락 (추가)</option>
+              <option value="ADD_HIKE">➕ 전 달 인상 미반영 (추가)</option>
+              <option value="ADD_ALLOWANCE">➕ 누락 수당</option>
+              <option value="SUB_OVER">➖ 전 달 과지급 (공제)</option>
+              <option value="SUB_ETC">➖ 기타 공제</option>
+            </select>
+          </div>
+          <div class="modal-input-group">
+            <span class="modal-label">금액 (원)</span>
+            <input type="number" id="adjAmount" class="modal-input" placeholder="금액을 입력하세요">
+          </div>
+          <div class="modal-input-group">
+            <span class="modal-label">내용 (비고)</span>
+            <input type="text" id="adjNote" class="modal-input" placeholder="예: 1월분 길동이 누락분">
+          </div>
+          
+          <div class="modal-options">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkRate" checked>
+              <span id="lblRate">비율 적용 (60%)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkTax" checked>
+              <span>세금 공제 (3.3%)</span>
+            </label>
+          </div>
+
+          <button class="btn-add-item" onclick="addAdjustmentItem()">⬇️ 리스트에 추가</button>
+        </div>
+
+        <div class="modal-label">적용될 조정 내역</div>
+        <div id="adjList" class="modal-list"></div>
+        <div style="text-align:right; font-weight:bold; margin-bottom:15px;">
+          합계: <span id="adjTotalDisplay" style="color:#1a73e8;">0</span>원
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-cancel" onclick="closeModal()">취소</button>
+          <button class="btn-save" onclick="applyAdjustments()">✅ 적용하기</button>
+        </div>
+      </div>
+    </div>
+
+  <div id="exportModal" class="modal-overlay">
+      <div class="modal-box" style="width:420px;">
+        <div class="modal-header">
+          <span class="modal-title">🖨️ 인쇄 및 파일 저장</span>
+          <button class="modal-close" onclick="closeExportModal()">×</button>
+        </div>
+        
+        <div style="margin-bottom:15px; padding:10px;">
+          <div style="font-weight:bold; margin-bottom:10px; color:#1a73e8;">1. 어떤 원장을 출력할까요?</div>
+          <div style="background:#f8f9fa; padding:10px; border-radius:6px; margin-bottom:20px;">
+            <label for="exportTeacherSelect" style="display:block; margin-bottom:7px; font-size:12px; color:#5f6368;">전체 원장 또는 한 명을 선택하세요.</label>
+            <select id="exportTeacherSelect" style="width:100%; min-height:40px; padding:8px 10px; border:1px solid #dadce0; border-radius:6px; background:#fff; font-size:14px;">
+              <option value="">전체 원장</option>
+            </select>
+          </div>
+
+          <div style="font-weight:bold; margin-bottom:10px; color:#1a73e8;">2. 어떤 방식으로 출력할까요?</div>
+          <div style="background:#f8f9fa; padding:10px; border-radius:6px;">
+            <label style="display:block; margin-bottom:8px; cursor:pointer; font-size:13px;">
+              <input type="radio" name="exportMethod" value="print" checked> 🖨️ 종이 인쇄 (프린터 출력)
+            </label>
+            <label style="display:block; margin-bottom:8px; cursor:pointer; font-size:13px;">
+              <input type="radio" name="exportMethod" value="pdf_separate"> 📄 개별 PDF 파일로 분리 저장
+            </label>
+            <label style="display:block; cursor:pointer; font-size:13px;">
+              <input type="radio" name="exportMethod" value="pdf_merged"> 📄 하나의 PDF 파일로 병합 저장
+            </label>
+            <label style="display:block; margin-top:8px; cursor:pointer; font-size:13px;">
+              <input type="radio" name="exportMethod" value="image_separate"> 🖼️ 이미지로 저장 (페이지별 개별 PNG 여러 장)
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-cancel" onclick="closeExportModal()">취소</button>
+          <button class="btn-save" onclick="executeExport()">🚀 실행하기</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="salaryMonthConfirmModal" class="modal-overlay">
+      <div class="modal-box salary-confirm-box" role="dialog" aria-modal="true" aria-labelledby="salaryMonthConfirmTitle">
+        <div class="modal-header">
+          <span id="salaryMonthConfirmTitle" class="modal-title">✅ 월 급여 전체 확정</span>
+          <button class="modal-close" onclick="finishSalaryMonthConfirmation(false)">×</button>
+        </div>
+        <div id="salaryMonthConfirmSummary" class="salary-confirm-summary"></div>
+        <div id="salaryMonthConfirmList" class="salary-confirm-list"></div>
+        <div class="salary-confirm-warning">저장 전 검증에 실패하면 전체 확정이 취소됩니다.</div>
+        <div class="modal-footer">
+          <button class="btn-cancel" onclick="finishSalaryMonthConfirmation(false)">취소</button>
+          <button id="salaryMonthConfirmSubmit" class="btn-save" onclick="finishSalaryMonthConfirmation(true)">이 금액으로 전체 확정</button>
+        </div>
+      </div>
+    </div>
+
+
+
+  <?!= includeHtml_('SalaryCommonModule'); ?>
+  <?!= includeHtml_('SalaryAdminModule'); ?>
+  <?!= includeHtml_('SalaryCalculationModule'); ?>
+  <?!= includeHtml_('SalaryFinalizePrintModule'); ?>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+  <?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; background-color: #f8f9fa; }
+      h2 { margin-top: 0; color: #f9ab00; font-size: 18px; text-align: center; } /* 휴가는 노란색 포인트 */
+      
+      label { display: block; font-size: 12px; font-weight: bold; color: #555; margin-bottom: 4px; margin-top: 10px; }
+      input, select, textarea { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+      
+      #searchInput { background-color: #fff8e1; border-color: #f9ab00; font-weight: bold; }
+      
+      button { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 20px; font-size: 14px; }
+      .btn-save { background: #f9ab00; color: white; text-shadow: 0 1px 1px rgba(0,0,0,0.2); }
+      .btn-save:hover { background: #e09b00; }
+      .btn-close { background: #f1f3f4; color: #333; margin-top: 10px; }
+      
+      .date-row { display: flex; gap: 10px; }
+      .date-row div { flex: 1; }
+      .btn-container {
+        display: flex;
+        gap: 10px; /* 버튼 사이의 간격 */
+        margin-top: 20px;
+      }
+      .btn-container button {
+        margin-top: 0; /* 컨테이너에서 여백을 주므로 버튼 자체 여백은 제거 */
+        flex: 1; /* 두 버튼이 1:1 비율로 똑같이 공간을 나누어 가짐 */
+      }
+      .period-list { margin-top:18px; border-top:1px solid #dadce0; padding-top:10px; }
+      .period-item { background:white; border:1px solid #dadce0; border-radius:6px; padding:9px; margin-top:7px; font-size:12px; }
+      .period-actions { display:flex; gap:6px; margin-top:6px; }
+      .period-actions button { width:auto; margin:0; padding:6px 9px; font-size:11px; }
+    </style>
+  </head>
+  <body>
+    <h2>🏖️ 학생 휴가 등록</h2>
+
+    <label>학생 검색</label>
+    <input type="text" id="searchInput" placeholder="이름 검색..." onkeyup="filterList()">
+    
+    <select id="studentList" onchange="selectStudent()">
+      <option value="" disabled selected>학생 선택</option>
+    </select>
+    <button type="button" class="student-info-link" style="margin:7px 0 10px" onclick="StudentInfoModal.open(document.getElementById('studentList').value)">선택 학생 정보 보기</button>
+    
+    <input type="hidden" id="v_id">
+    <input type="hidden" id="v_name">
+    <input type="hidden" id="v_periodId">
+
+    <div class="date-row">
+      <div>
+        <label>휴가 시작일</label>
+        <input type="date" id="v_startDate">
+      </div>
+      <div>
+        <label>휴가 종료일</label>
+        <input type="date" id="v_endDate">
+      </div>
+    </div>
+
+
+ 
+
+    <label>휴가 사유</label>
+    <input type="text" id="v_reason" placeholder="예: 가족여행, 병가 등">
+
+    <div class="btn-container">
+      <a href="<?= ScriptApp.getService().getUrl() ?>" 
+   target="_top" 
+   class="btn-cancel" 
+   style="display: block; text-align: center; text-decoration: none; box-sizing: border-box; padding: 12px; border-radius: 6px; font-weight: bold; background-color: #5f6368; color: white; flex: 1;"
+   onclick="return smartClose(event);">
+   ✖ 닫기
+</a>
+      <button type="button" class="btn-save" onclick="saveData()">휴가등록</button>
+    </div>
+    <div class="period-list">
+      <b>선택 학생의 휴가·퇴원공백</b>
+      <div id="periodList" style="color:#777;margin-top:6px;">학생을 선택하면 기존 기간을 표시합니다.</div>
+    </div>
+
+    <script>
+      var allStudents = [];
+      var currentPeriods = [];
+      var vacationListRequestGate = null;
+
+      function ensureVacationRequestGate() {
+        if (!vacationListRequestGate) vacationListRequestGate = CommonStudentPicker.createRequestGate();
+      }
+
+      function clearStudentSelection() {
+        CommonStudentPicker.resetSelection({
+          selectId: "studentList", valueIds: ["v_id", "v_name"]
+        });
+        currentPeriods = [];
+        document.getElementById("periodList").textContent = "학생을 선택하면 기존 기간을 표시합니다.";
+        resetPeriodEdit();
+      }
+
+      window.onload = function() {
+        // 오늘 날짜 세팅
+        document.getElementById('v_startDate').valueAsDate = new Date();
+        document.getElementById('v_endDate').valueAsDate = new Date();
+        
+        // 기존 학생 목록 함수 재활용 (ID, 이름 포함된 것)
+        ensureVacationRequestGate();
+        var requestVersion = vacationListRequestGate.next();
+        google.script.run.withSuccessHandler(function(list) {
+          if (!vacationListRequestGate.isCurrent(requestVersion)) return;
+          initList(list);
+        }).withFailureHandler(function(error) {
+          if (!vacationListRequestGate.isCurrent(requestVersion)) return;
+          document.getElementById("studentList").innerHTML = '<option>학생 목록을 불러오지 못했습니다. 새로고침해주세요.</option>';
+          alert(CommonUiFailure.message("휴가 관리 학생 목록 조회", error));
+        }).getStudentListForVacation();
+      };
+
+      function initList(list) {
+        allStudents = list;
+        allStudents.sort(function(a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+        renderOptions(allStudents);
+      }
+
+      function renderOptions(list) {
+        var select = document.getElementById("studentList");
+        select.innerHTML = '<option value="" disabled selected>학생 선택 (' + list.length + '명)</option>';
+        
+        list.forEach(function(s) {
+          var option = document.createElement("option");
+          option.value = s.id; // 값은 ID
+          
+          var info = s.name;
+          if (s.grade) info += " (" + s.grade + ")";
+          if (s.teacher) info += " | " + s.teacher;
+          
+          option.text = info;
+          // data 속성에 이름 저장 (나중에 꺼내 쓰기 위함)
+          option.setAttribute("data-name", s.name);
+          select.appendChild(option);
+        });
+      }
+      
+      // =====================================================================
+      // 🚀 [만능 검색 함수 팩] 다른 HTML 파일의 filterList()를 이것으로 교체하세요.
+      // =====================================================================
+      
+      function filterList() {
+        clearStudentSelection();
+        var input = document.getElementById("searchInput").value;
+        var filtered = CommonStudentPicker.filterStudents(allStudents, input, { fields: ["name"] });
+        renderOptions(filtered);
+        CommonStudentPicker.autoSelectSingle("studentList", filtered);
+      }
+
+      function selectStudent() {
+        var select = document.getElementById("studentList");
+        var id = select.value;
+        if (!id || select.selectedIndex <= 0) { clearStudentSelection(); return; }
+        var name = select.options[select.selectedIndex].getAttribute("data-name");
+        
+        document.getElementById("v_id").value = id;
+        document.getElementById("v_name").value = name;
+        loadVacationPeriods(id);
+      }
+
+      function loadVacationPeriods(studentId) {
+        document.getElementById("periodList").textContent = "기간을 불러오는 중...";
+        google.script.run.withSuccessHandler(function(periods) {
+          if (document.getElementById("v_id").value !== studentId) return;
+          currentPeriods = periods || [];
+          renderVacationPeriods();
+        }).withFailureHandler(function(error) {
+          document.getElementById("periodList").textContent = (error && error.message ? error.message : String(error || "기간을 불러오지 못했습니다.")) + " 학생을 다시 선택하거나 화면을 새로고침해주세요.";
+        }).getVacationPeriodsForStudent(studentId);
+      }
+
+      function renderVacationPeriods() {
+        var box = document.getElementById("periodList");
+        box.innerHTML = "";
+        if (!currentPeriods.length) {
+          box.textContent = "등록된 기간이 없습니다.";
+          return;
+        }
+        currentPeriods.forEach(function(period) {
+          var item = document.createElement("div");
+          item.className = "period-item";
+          var text = document.createElement("div");
+          text.textContent = "[" + (period.periodType || "일반휴가") + "] " +
+            period.startDate + " ~ " + period.endDate + " / " + (period.reason || "사유 없음");
+          var actions = document.createElement("div");
+          actions.className = "period-actions";
+          if ((period.periodType || "일반휴가") === "퇴원공백") {
+            var managed = document.createElement("span");
+            managed.textContent = "자동 관리";
+            managed.style.cssText = "font-size:11px;color:#5f6368;background:#f1f3f4;padding:4px 7px;border-radius:10px;";
+            actions.appendChild(managed);
+            item.appendChild(text); item.appendChild(actions); box.appendChild(item);
+            return;
+          }
+          var editButton = document.createElement("button");
+          editButton.type = "button"; editButton.textContent = "수정";
+          editButton.onclick = function() { beginPeriodEdit(period); };
+          var deleteButton = document.createElement("button");
+          deleteButton.type = "button"; deleteButton.textContent = "휴지통"; deleteButton.style.background = "#d93025";
+          deleteButton.onclick = function() { removePeriod(period); };
+          actions.appendChild(editButton); actions.appendChild(deleteButton);
+          item.appendChild(text); item.appendChild(actions); box.appendChild(item);
+        });
+      }
+
+      function beginPeriodEdit(period) {
+        document.getElementById("v_periodId").value = period.id;
+        document.getElementById("v_startDate").value = period.startDate;
+        document.getElementById("v_endDate").value = period.endDate;
+        document.getElementById("v_reason").value = period.reason || "";
+        document.querySelector(".btn-save").textContent = "기간 수정";
+      }
+
+      function resetPeriodEdit() {
+        document.getElementById("v_periodId").value = "";
+        document.querySelector(".btn-save").textContent = "휴가 등록";
+      }
+
+      function removePeriod(period) {
+        if (!confirm(period.startDate + " ~ " + period.endDate + " 기간을 휴지통으로 이동하시겠습니까?")) return;
+        google.script.run.withSuccessHandler(function(message) {
+          alert(message);
+          resetPeriodEdit();
+          loadVacationPeriods(document.getElementById("v_id").value);
+        }).withFailureHandler(function(error) {
+          alert(CommonUiFailure.message("휴가·퇴원공백 삭제", error));
+        }).deleteVacationPeriod(period.id, "기간 관리 화면에서 삭제");
+      }
+
+      function saveData() {
+        var id = document.getElementById("v_id").value;
+        if (!id) { alert("학생을 선택해주세요."); return; }
+        
+        var start = document.getElementById("v_startDate").value;
+        var end = document.getElementById("v_endDate").value;
+        
+        if (start > end) { alert("종료일이 시작일보다 빠를 수 없습니다."); return; }
+
+        var form = {
+          periodId: document.getElementById("v_periodId").value,
+          studentId: id,
+          studentName: document.getElementById("v_name").value,
+          startDate: start,
+          endDate: end,
+          reason: document.getElementById("v_reason").value
+        };
+
+        var btn = document.querySelector(".btn-save");
+        btn.innerText = "저장 중...";
+        btn.disabled = true;
+
+        var runner = google.script.run.withSuccessHandler(function(res){
+          // 1. 성공 메시지
+          alert(res);
+          
+          // 2. ★ 입력창 초기화 (연속 등록을 위해)
+          document.getElementById("v_reason").value = ""; // 사유 비움
+          document.getElementById("searchInput").value = ""; // 검색어 비움
+          
+          // 날짜는 오늘 날짜로 리셋 (편의성)
+          var today = new Date();
+          document.getElementById('v_startDate').valueAsDate = today;
+          document.getElementById('v_endDate').valueAsDate = today;
+
+          // 3. 버튼 원상복구
+          btn.innerText = "휴가 등록";
+          btn.disabled = false;
+          resetPeriodEdit();
+          loadVacationPeriods(id);
+        }).withFailureHandler(function(error) {
+          alert(CommonUiFailure.message(form.periodId ? "휴가·퇴원공백 수정" : "휴가 등록", error));
+          btn.innerText = form.periodId ? "기간 수정" : "휴가 등록";
+          btn.disabled = false;
+        });
+        if (form.periodId) runner.updateVacationPeriod(form);
+        else runner.saveVacation(form);
+      }
+
+         // ★ 추가할 함수: 팝업/웹앱 호환 스마트 닫기 스위치
+      // ★ 팝업/웹앱 호환 스마트 닫기 스위치 (StudentEdit 노하우 적용)
+      function smartClose(event) {
+        try {
+          // 1. 독립 웹앱일 경우: true를 반환하여 <a> 태그의 메인화면 이동(href)을 허용함
+          if (window.top === window.self) return true; 
+          
+          // 2. 구글 시트 팝업일 경우: 이동을 막고(preventDefault) 팝업창을 닫음
+          if (document.referrer.indexOf("docs.google.com") !== -1) {
+            event.preventDefault();     
+            google.script.host.close(); 
+            return false;
+          }
+          return true;
+        } catch(e) {
+          event.preventDefault();
+          google.script.host.close();
+          return false;
+        }
+      }
+    </script>
+  <?!= includeHtml_('StudentPickerCommon'); ?>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+<?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Noto Sans KR', sans-serif; padding: 15px; background: #f8f9fa; }
+      
+      .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+      
+      /* 탭 메뉴 스타일 */
+      .tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
+      .tab-btn { padding: 8px 16px; background: #eee; border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font-weight: bold; color: #555; }
+      .tab-btn.active { background: #1a73e8; color: white; border-color: #1a73e8; }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+
+      .search-box { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; margin-bottom: 10px; box-sizing: border-box; }
+      
+      .list-container { height: 400px; overflow-y: auto; background: white; border: 1px solid #ddd; border-radius: 4px; }
+      
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th { position: sticky; top: 0; background: #eee; padding: 8px; text-align: left; }
+      td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: middle; }
+      tr:hover { background-color: #f1f8ff; cursor: pointer; }
+      
+      .chk-col { width: 30px; text-align: center; }
+      
+      /* 관계명 뱃지 디자인 */
+      .rel-badge { background: #e3f2fd; color: #1565c0; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; border: 1px solid #bbdefb; }
+      .no-fam { color: #ccc; font-size: 11px; }
+      
+      /* ★ [신규] 가족 대시보드 카드 레이아웃 */
+      .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; max-height: 420px; overflow-y: auto; padding: 5px; }
+      .family-card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.04); position: relative; display: flex; flex-direction: column; justify-content: space-between; }
+      .family-card:hover { border-color: #1a73e8; box-shadow: 0 4px 8px rgba(26,115,232,0.1); }
+      .family-title { font-size: 15px; font-weight: bold; color: #1967d2; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #e0e0e0; padding-bottom: 5px; }
+      .member-list { list-style: none; padding: 0; margin: 0 0 15px 0; font-size: 13px; color: #333; }
+      .member-item { padding: 4px 0; display: flex; justify-content: space-between; }
+      .member-info { color: #666; font-size: 12px; }
+      .card-actions { display: flex; gap: 5px; }
+      .card-actions button { flex: 1; padding: 6px; font-size: 11px; }
+
+      /* 하단 버튼 바 레이아웃 */
+      .footer { margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+      button, .btn-cancel { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; }
+      
+      .btn-group { background: #1a73e8; color: white; }
+      .btn-ungroup { background: #d93025; color: white; }
+      .btn-refresh { background: #fff; border: 1px solid #ddd; color: #555; }
+      
+      /* 미니 버튼 스타일 */
+      .btn-mini-edit { background: #f1f3f4; color: #333; border: 1px solid #ccc; border-radius: 4px; }
+      .btn-mini-edit:hover { background: #e8eaed; }
+      .btn-mini-del { background: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; border-radius: 4px; }
+      .btn-mini-del:hover { background: #fad2cf; }
+      
+      /* ★ 신규 추가: 인원 추가 버튼 초록색 테마 */
+      .btn-mini-add { background: #e6f4ea; color: #137333; border: 1px solid #ceead6; border-radius: 4px; }
+      .btn-mini-add:hover { background: #ceead6; }
+
+      /* 돌아가기 링크 버튼 */
+      .btn-cancel { background: #5f6368; color: white !important; text-decoration: none; display: inline-block; text-align: center; margin-right: auto; box-sizing: border-box; }
+    </style>
+  </head>
+  <body>
+
+    <div class="header">
+      <h3 style="margin:0;">👨‍👩‍👦 형제/자매 관계 관리</h3>
+      <button class="btn-refresh" onclick="loadList()">🔄 새로고침</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('tab1')">📋 전체 원생 목록</button>
+      <button class="tab-btn" onclick="switchTab('tab2')">🏡 가족 그룹 대시보드 (<span id="groupCount">0</span>)</button>
+    </div>
+
+    <div id="tab1" class="tab-content active">
+      <input type="text" id="searchInput" class="search-box" placeholder="이름 검색..." onkeyup="filterList()">
+      <div class="list-container">
+        <table>
+          <colgroup>
+            <col style="width: 40px;">
+            <col style="width: 80px;">
+            <col style="width: 140px;">
+            <col style="width: 100px;">
+            <col>
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="chk-col"><input type="checkbox" disabled></th>
+              <th>이름</th>
+              <th>학년</th>
+              <th>상태</th>
+              <th>형제 관계명</th>
+            </tr>
+          </thead>
+          <tbody id="studentList">
+            <tr><td colspan="5" style="text-align:center; padding:20px;">데이터 로딩 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tab2" class="tab-content">
+      <div id="familyGrid" class="grid-container">
+        <div style="text-align:center; width:100%; color:#888; padding:40px;">데이터를 분석 중입니다...</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a href="<?= ScriptApp.getService().getUrl() ?>" target="_top" class="btn-cancel" onclick="return smartClose(event);"> ✖ 닫기</a>
+      
+      <button class="btn-ungroup" id="footerBtnUngroup" onclick="processGroup('UNGROUP')">⛓️ 관계 해제</button>
+      <button class="btn-group" id="footerBtnGroup" onclick="processGroup('GROUP')">🔗 선택 묶기 / 이름 수정</button>
+    </div>
+
+    <script>
+      var rawData = [];
+      var siblingListRequestGate = null;
+      window.onload = loadList;
+
+      function loadList() {
+        if (!siblingListRequestGate) siblingListRequestGate = CommonStudentPicker.createRequestGate();
+        var requestVersion = siblingListRequestGate.next();
+        google.script.run.withSuccessHandler(function(list) {
+          if (!siblingListRequestGate.isCurrent(requestVersion)) return;
+          renderList(list);
+        }).withFailureHandler(function(error) {
+          if (!siblingListRequestGate.isCurrent(requestVersion)) return;
+          document.getElementById("studentList").innerHTML = '<tr><td colspan="6" style="color:#c5221f;padding:24px;">학생 목록을 불러오지 못했습니다. 화면을 새로고침해주세요.</td></tr>';
+          alert(CommonUiFailure.message("형제 관리 학생 목록 조회", error));
+        }).getStudentListForManager();
+      }
+
+      // 탭 전환 기능
+      function switchTab(tabId) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        
+        if(tabId === 'tab1') {
+          document.querySelectorAll('.tab-btn')[0].classList.add('active');
+          document.getElementById('tab1').classList.add('active');
+          document.getElementById('footerBtnGroup').style.display = '';
+          document.getElementById('footerBtnUngroup').style.display = '';
+        } else {
+          document.querySelectorAll('.tab-btn')[1].classList.add('active');
+          document.getElementById('tab2').classList.add('active');
+          document.getElementById('footerBtnGroup').style.display = 'none';
+          document.getElementById('footerBtnUngroup').style.display = 'none';
+        }
+      }
+
+      function renderList(list) {
+        rawData = list;
+        var tbody = document.getElementById("studentList");
+        tbody.innerHTML = "";
+
+        // 1. 기존 테이블 목록 그리기
+        list.forEach(function(s) {
+          var tr = document.createElement("tr");
+          tr.onclick = function(e) {
+            if(e.target.type !== 'checkbox') {
+               var chk = this.querySelector(".row-chk");
+               chk.checked = !chk.checked;
+            }
+          };
+
+          var badge = s.relName 
+            ? '<span class="rel-badge">' + escapeHtml(s.relName) + '</span>' 
+            : '<span class="no-fam">-</span>';
+
+          tr.innerHTML = `
+            <td class="chk-col"><input type="checkbox" class="row-chk" value="${escapeHtml(s.id)}"></td>
+            <td style="font-weight:bold;"><button type="button" class="student-info-link" data-student-modal-id="${escapeHtml(s.id)}">${escapeHtml(s.name)}</button></td>
+            <td>${escapeHtml(s.grade)}</td>
+            <td>${escapeHtml(s.status)}</td>
+            <td>${badge}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // 2. ★ [신규] 가족 그룹 대시보드 카드 생성 로직 트리거
+        renderFamilyDashboard(list);
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) {
+          return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];
+        });
+      }
+
+      function safeJsArg(value) {
+        return JSON.stringify(value).replace(/</g, "\\u003c").replace(/'/g, "\\u0027");
+      }
+
+      // ★ [신규 추가] 가족 대시보드 빌더 함수
+      function renderFamilyDashboard(list) {
+        var grid = document.getElementById("familyGrid");
+        grid.innerHTML = "";
+        
+        // 표시명은 중복될 수 있으므로 가족 ID를 기준으로 그룹핑합니다.
+        var groups = {};
+        list.forEach(function(s) {
+          if (s.famId && String(s.famId).trim() !== "") {
+            if (!groups[s.famId]) {
+              groups[s.famId] = { name: s.relName || "이름 없는 가족", members: [] };
+            }
+            groups[s.famId].members.push(s);
+          }
+        });
+
+        var groupKeys = Object.keys(groups);
+        document.getElementById("groupCount").innerText = groupKeys.length;
+
+        if (groupKeys.length === 0) {
+          grid.innerHTML = '<div style="text-align:center; width:100%; color:#ccc; padding:40px; grid-column: 1/-1;">생성된 형제/자매 그룹이 없습니다.</div>';
+          return;
+        }
+
+        // 각 그룹별로 카드형태 UI 동적 생성
+        groupKeys.forEach(function(familyId) {
+          var groupName = groups[familyId].name;
+          var members = groups[familyId].members;
+          var card = document.createElement("div");
+          card.className = "family-card";
+
+          var memberHtml = "";
+          var memberIds = [];
+          
+          members.forEach(function(m) {
+            memberIds.push(m.id);
+            memberHtml += `
+              <li class="member-item">
+                <strong>👤 <button type="button" class="student-info-link" data-student-modal-id="${escapeHtml(m.id)}">${escapeHtml(m.name)}</button></strong>
+                <span class="member-info">(${escapeHtml(m.grade)} / ${escapeHtml(m.status)})</span>
+                <span style="display:block;margin-top:5px;">할인액 <input type="number" min="0" step="1000" value="${Number(m.siblingDiscount || 0)}" style="width:100px;" data-discount-id="${escapeHtml(m.id)}">원
+                <input type="month" style="width:125px;" data-discount-month="${escapeHtml(m.id)}">
+                <button type="button" onclick='saveSiblingDiscount(${safeJsArg(m.id)}, this)'>저장</button></span>
+              </li>
+            `;
+          });
+
+          card.innerHTML = `
+            <div>
+              <div class="family-title">
+                <span>🏡 ${escapeHtml(groupName)}</span>
+                <span style="font-size:11px; background:#f1f3f4; padding:2px 6px; border-radius:4px; color:#555;">${members.length}명</span>
+              </div>
+              <ul class="member-list">
+                ${memberHtml}
+              </ul>
+            </div>
+            <div class="card-actions">
+              <button type="button" class="btn-mini-add" onclick='directAddMember(${safeJsArg(groupName)}, ${safeJsArg(memberIds)})'>➕ 인원 추가</button>
+              <button type="button" class="btn-mini-edit" onclick='directRename(${safeJsArg(groupName)}, ${safeJsArg(memberIds)})'>✏️ 명칭 변경</button>
+              <button type="button" class="btn-mini-del" onclick='directUngroup(${safeJsArg(memberIds)}, ${safeJsArg(groupName)})'>⛓️ 관계 해제</button>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+      }
+
+      function saveSiblingDiscount(studentId, button) {
+        var input = button.parentElement.querySelector("input[data-discount-id]");
+        var monthInput = button.parentElement.querySelector("input[data-discount-month]");
+        if (!monthInput.value) {
+          var now = new Date();
+          monthInput.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+        }
+        button.disabled = true;
+        google.script.run.withSuccessHandler(function(message) {
+          alert(message); button.disabled = false; loadList();
+        }).withFailureHandler(function(error) {
+          alert(CommonUiFailure.message("형제 할인액 저장", error)); button.disabled = false;
+        }).updateSiblingDiscount(studentId, input.value, monthInput.value);
+      }
+
+      // ★ [신규] 대시보드 전용 멤버 추가 기능 (이름 검색 기반)
+      function directAddMember(groupName, existingIds) {
+        var searchName = prompt("🏡 '" + groupName + "' 그룹에 추가할 학생의 이름을 정확히 입력하세요:\n(※ 동명이인이 있다면 [전체 원생 목록] 탭에서 직접 체크해주세요.)");
+        if (!searchName) return;
+        searchName = searchName.trim();
+        if (searchName === "") return;
+
+        // 전체 데이터에서 해당 이름 찾기
+        var matched = rawData.filter(s => s.name === searchName);
+        if (matched.length === 0) {
+          alert("❌ '" + searchName + "' 학생을 찾을 수 없습니다. 등록된 이름을 다시 확인해 주세요.");
+          return;
+        }
+        if (matched.length > 1) {
+          alert("⚠️ 동명이인이 " + matched.length + "명 있습니다!\n안전을 위해 [전체 원생 목록] 탭에서 추가할 학생과 기존 가족을 직접 체크한 후 묶어주세요.");
+          return;
+        }
+
+        var targetStudent = matched[0];
+        if (existingIds.includes(targetStudent.id)) {
+          alert("이미 '" + groupName + "'에 포함되어 있는 학생입니다.");
+          return;
+        }
+
+        if (!confirm(targetStudent.name + "(" + targetStudent.grade + ") 학생을 '" + groupName + "'에 추가하시겠습니까?")) return;
+
+        // ★ 핵심: 기존 가족 ID 배열에 새 학생 ID를 더해서 한 번에 서버로 전송
+        var newIds = existingIds.concat([targetStudent.id]);
+
+        google.script.run.withSuccessHandler(function(res){
+          alert(res);
+          loadList();
+        }).withFailureHandler(function(error){ alert(CommonUiFailure.message("형제 그룹에 학생 추가", error)); }).updateSiblingGroup(newIds, 'GROUP', groupName);
+      }
+
+      // 대시보드 전용 직관적 명칭 변경 숏컷
+      function directRename(oldName, ids) {
+        var customName = prompt("이 가족 그룹의 새 이름을 입력하세요:", oldName);
+        if (customName === null) return;
+        if (customName.trim() === "") { alert("이름을 공백으로 둘 수 없습니다."); return; }
+        
+        google.script.run.withSuccessHandler(function(res){
+          alert(res);
+          loadList();
+        }).withFailureHandler(function(error){ alert(CommonUiFailure.message("형제 그룹 이름 변경", error)); }).updateSiblingGroup(ids, 'GROUP', customName);
+      }
+
+      // 대시보드 전용 직관적 그룹 통삭제 숏컷
+      function directUngroup(ids, groupName) {
+        if (!confirm("'" + groupName + "' 그룹의 모든 형제 관계를 해제하시겠습니까?")) return;
+        google.script.run.withSuccessHandler(function(res){
+          alert(res);
+          loadList();
+        }).withFailureHandler(function(error){ alert(CommonUiFailure.message("형제 관계 해제", error)); }).updateSiblingGroup(ids, 'UNGROUP', '');
+      }
+
+      // [기존 필터 함수] 초성 + 한영타 변환 완벽 보존
+      function filterList() {
+        document.querySelectorAll(".row-chk:checked").forEach(function(chk) { chk.checked = false; });
+        var input = document.getElementById("searchInput").value;
+        var rows = document.getElementById("studentList").getElementsByTagName("tr");
+        var matchedIds = {};
+        CommonStudentPicker.filterStudents(rawData, input, { fields: ["name"] }).forEach(function(student) {
+          matchedIds[String(student.id)] = true;
+        });
+
+        for (var i = 0; i < rows.length; i++) {
+          var checkbox = rows[i].querySelector(".row-chk");
+          rows[i].style.display = checkbox && matchedIds[String(checkbox.value)] ? "" : "none";
+        }
+      }
+
+      // 기존 하단 배정 프로세스 유지
+      function processGroup(mode) {
+        var checkboxes = document.querySelectorAll(".row-chk:checked");
+        if (checkboxes.length === 0) { alert("선택된 학생이 없습니다."); return; }
+        if (mode === 'GROUP' && checkboxes.length < 2) { alert("형제로 묶으려면 최소 2명 이상 선택해야 합니다."); return; }
+
+        var ids = []; var selectedStudents = [];
+        checkboxes.forEach(function(chk) { 
+          ids.push(chk.value); 
+          var student = rawData.find(s => String(s.id) === String(chk.value));
+          if(student) selectedStudents.push(student);
+        });
+        var customName = "";
+
+        if (mode === 'GROUP') {
+          selectedStudents.sort(function(a, b) { return a.id.localeCompare(b.id); });
+          
+          // ★ [스마트 작명 로직] 선택된 학생 중 이미 가족 그룹에 속한 학생이 있다면 그 이름을 1순위로 제안
+          var existingFam = selectedStudents.find(s => s.relName && s.relName.trim() !== "");
+          var defaultName = existingFam ? existingFam.relName : (selectedStudents[0].name + "네");
+          
+          customName = prompt("형제 그룹의 이름을 설정하세요:", defaultName);
+          if (customName === null) return; 
+          if (customName.trim() === "") customName = defaultName;
+        } else {
+          // ★ [오류 원인 복구] 누락되었던 괄호 닫기와 해제 확인창 코드를 복구했습니다.
+          if (!confirm("선택한 학생들의 형제 관계를 끊으시겠습니까?")) return;
+        }
+
+        google.script.run.withSuccessHandler(function(res){
+          alert(res);
+          loadList(); 
+        }).withFailureHandler(function(error){ alert(CommonUiFailure.message(mode === 'GROUP' ? "형제 그룹 저장" : "형제 관계 해제", error)); }).updateSiblingGroup(ids, mode, customName);
+      }
+
+      // 하이브리드 스마트 클로즈 보존
+      function smartClose(event) {
+        try {
+          if (window.top === window.self) return true; 
+          if (document.referrer.indexOf("docs.google.com") !== -1) {
+            event.preventDefault();     
+            google.script.host.close(); 
+            return false;
+          }
+          return true;
+        } catch(e) {
+          event.preventDefault();
+          google.script.host.close();
+          return false;
+        }
+      }
+    </script>
+  <?!= includeHtml_('StudentPickerCommon'); ?>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+<?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

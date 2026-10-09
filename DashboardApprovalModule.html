@@ -1,0 +1,224 @@
+<script>
+  var paymentApprovalRequests = {};
+  var paymentApprovalLoading = false;
+  var paymentApprovalLoadedAt = 0;
+  var PAYMENT_APPROVAL_CLIENT_CACHE_MS = 30000;
+  var approvalActiveFilter = "ALL";
+  var approvalEvidenceScale = null;
+
+  function initializePaymentApprovalAccess_() {
+    bindPaymentApprovalActions_();
+    bindApprovalEvidenceControls_();
+    window.addEventListener("dashboard-bootstrap-ready", function(event) {
+      applyPaymentApprovalBootstrap_(event.detail || {});
+    });
+    if (window.dashboardBootstrapState) applyPaymentApprovalBootstrap_(window.dashboardBootstrapState);
+  }
+
+  function applyPaymentApprovalBootstrap_(bootstrap) {
+    var profile = bootstrap.access || {};
+    if (!profile.isSuperAdmin) return;
+    var button = document.getElementById("approvalQueueBtn");
+    if (button) button.style.display = "inline-flex";
+    renderUnifiedRequestSummary_((bootstrap.navigationState && bootstrap.navigationState.counts) || {});
+  }
+
+  function renderUnifiedRequestSummary_(counts) {
+    counts = counts || { total:0, payment:0, change:0 };
+    var button = document.getElementById("approvalQueueBtn"), count = document.getElementById("approvalQueueCount");
+    var total = Number(counts.total) || 0;
+    if (count) {
+      count.textContent = String(total);
+      count.hidden = total <= 0;
+    }
+    if (button) {
+      button.classList.toggle("has-items", total > 0);
+      button.title = "수납 " + (Number(counts.payment)||0) + "건 · 학생·운영 " + (Number(counts.change)||0) + "건";
+      button.setAttribute("aria-label", "승인 요청함, 대기 요청 " + total + "건");
+    }
+  }
+
+  function bindPaymentApprovalActions_() {
+    var list = document.getElementById("paymentApprovalList");
+    if (!list || list.dataset.bound === "1") return;
+    list.dataset.bound = "1";
+    list.addEventListener("click", function(event) {
+      var button = event.target.closest("button[data-action]");
+      if (!button || button.disabled) return;
+      var requestId = String(button.dataset.requestId || "");
+      if (button.dataset.action === "approve") approveUnifiedRequest_(requestId, button);
+      else if (button.dataset.action === "reject") rejectUnifiedRequest_(requestId, button);
+      else if (button.dataset.action === "evidence") openApprovalEvidence_(requestId, String(button.dataset.fileId || ""));
+      else if (button.dataset.action === "filter") { approvalActiveFilter = button.dataset.filter || "ALL"; renderPaymentApprovalQueue_({ requests:Object.keys(paymentApprovalRequests).map(function(id){return paymentApprovalRequests[id]}) }); }
+    });
+  }
+
+  function openPaymentApprovalModal() {
+    document.getElementById("paymentApprovalModal").style.display = "flex";
+    if (paymentApprovalLoadedAt && Date.now()-paymentApprovalLoadedAt<PAYMENT_APPROVAL_CLIENT_CACHE_MS) {
+      renderPaymentApprovalQueue_({ requests:Object.keys(paymentApprovalRequests).map(function(id){return paymentApprovalRequests[id]}) });
+      return;
+    }
+    loadPaymentApprovalQueue(true,false);
+  }
+  function closePaymentApprovalModal() { document.getElementById("paymentApprovalModal").style.display = "none"; }
+
+  function loadPaymentApprovalQueue(showLoading,forceReload) {
+    if (paymentApprovalLoading) return;
+    if (!forceReload&&paymentApprovalLoadedAt&&Date.now()-paymentApprovalLoadedAt<PAYMENT_APPROVAL_CLIENT_CACHE_MS) {
+      renderPaymentApprovalQueue_({ requests:Object.keys(paymentApprovalRequests).map(function(id){return paymentApprovalRequests[id]}) });
+      return;
+    }
+    paymentApprovalLoading = true;
+    var list = document.getElementById("paymentApprovalList");
+    if (showLoading && list) list.innerHTML = '<div class="approval-empty">승인 요청을 불러오는 중입니다.</div>';
+    google.script.run.withSuccessHandler(function(result) {
+      paymentApprovalLoading = false; paymentApprovalLoadedAt=Date.now(); renderPaymentApprovalQueue_(result || { count:0, counts:{}, requests:[] });
+    }).withFailureHandler(function(error) {
+      paymentApprovalLoading = false;
+      var message = error && error.message ? error.message : String(error || "조회 오류");
+      if (list) list.innerHTML = '<div class="approval-empty">조회 실패: ' + escapeHtml(message) + '<br>잠시 후 다시 열거나 화면을 새로고침해주세요.</div>';
+      showToast(actionableErrorMessage(error, "승인 요청 조회"), "error");
+    }).getUnifiedAdminRequestInbox();
+  }
+
+  function unifiedTypeName_(value) {
+    return {PAYMENT_CREATE:"수납 등록",STUDENT_CREATE:"학생 등록",STUDENT_UPDATE:"학생 정보·퇴원 변경",VACATION_CREATE:"휴가 등록",VACATION_UPDATE:"휴가 수정",VACATION_DELETE:"휴가 삭제",SIBLING_DISCOUNT:"형제 할인",SIBLING_GROUP:"형제 관계"}[value] || "학생·운영 요청";
+  }
+  function approvalField_(label, value) { return '<div class="approval-field"><small>'+escapeHtml(label)+'</small><b title="'+escapeHtml(value)+'">'+escapeHtml(value||'-')+'</b></div>'; }
+  function formatApprovalMoney_(value) { return Math.round(Number(value)||0).toLocaleString("ko-KR"); }
+  function unifiedChangeDetails_(request) {
+    var payload=request.payload||{},displayValues=request.displayValues||{};
+    var labels={studentId:"학생 번호",name:"학생명",studentName:"학생명",grade:"학년",status:"재원 상태",teacherId:"담당 원장",firstDate:"첫 수업일",asd:"최초 입학일",exitDate:"퇴원일",baseDay:"수강료 기준일",fee:"수강료",distRate:"배분률",parentPhone:"학부모 전화번호",phone:"학부모 전화번호",courseMode:"수강 형태",feeApplyDate:"수강료 적용일",statusApplyDate:"상태 적용일",teacherApplyDate:"담당 원장 적용일",effectiveDate:"적용일",effectiveMonth:"적용 월",startDate:"시작일",endDate:"종료일",reason:"사유",memo:"메모",periodId:"휴가 기록 번호",periodType:"휴가 구분",amount:"금액",customName:"가족 그룹명",mode:"처리 방식",studentIds:"대상 학생",newBaseDay:"변경 기준일",siblingDiscount:"형제 할인",otherDiscount:"기타 할인"};
+    var priority=["name","studentName","grade","status","teacherId","firstDate","asd","exitDate","baseDay","fee","courseMode","distRate","parentPhone","phone","feeApplyDate","statusApplyDate","teacherApplyDate","effectiveDate","effectiveMonth","startDate","endDate","periodType","amount","newBaseDay","siblingDiscount","otherDiscount","customName","mode","reason","memo","studentId","periodId"];
+    var keys=priority.filter(function(k){var v=payload[k];return Object.prototype.hasOwnProperty.call(labels,k)&&v!==""&&v!=null&&typeof v!=="object"}).slice(0,12);
+    var html=keys.map(function(k){var v=Object.prototype.hasOwnProperty.call(displayValues,k)?displayValues[k]:payload[k];if(["fee","amount","siblingDiscount","otherDiscount"].indexOf(k)!==-1&&!isNaN(Number(v)))v=formatApprovalMoney_(v)+"원";else if(k==="baseDay"||k==="newBaseDay")v="매월 "+v+"일";else if(k==="distRate"&&String(v).indexOf("%")===-1)v=v+"%";else if(k==="mode")v=({GROUP:"가족 그룹 설정",UNGROUP:"가족 그룹 해제"}[v]||"관계 변경");else if(v===true||v===false)v=v?"예":"아니오";return approvalField_(labels[k],String(v))}).join("");
+    if(Array.isArray(payload.studentIds))html+=approvalField_(labels.studentIds,payload.studentIds.length+"명");
+    return html || approvalField_("변경 내용",request.summary||unifiedTypeName_(request.type));
+  }
+  function unifiedRequestCard_(request) {
+    var isPayment=request.category==="PAYMENT", payment=request.payment||{}, title, titleHtml, fields, notes="", evidence="", modalStudentId="";
+    if(isPayment){
+      title=(request.targetName||"대상 없음")+" · "+(payment.itemType||"수납")+" "+formatApprovalMoney_(payment.amount)+"원";
+      fields=approvalField_("납부일",payment.payDate)+approvalField_("귀속월",payment.month)+approvalField_("납부 방식",payment.method)+approvalField_("증빙",payment.evidenceCount+"개");
+      if(payment.memo)notes+='<div class="approval-note"><b>수납 메모</b>\n'+escapeHtml(payment.memo)+'</div>';
+      if(request.payload&&request.payload.requestReason)notes+='<div class="approval-note"><b>요청 사유</b>\n'+escapeHtml(request.payload.requestReason)+'</div>';
+      if(request.duplicateWarning)notes+='<div class="approval-warning">⚠ '+escapeHtml(request.duplicateWarning)+'</div>';
+      evidence=(request.evidenceIds||[]).map(function(fileId,index){return '<button type="button" class="btn-evidence" data-action="evidence" data-request-id="'+escapeHtml(request.id)+'" data-file-id="'+escapeHtml(fileId)+'">증빙 '+(index+1)+'</button>'}).join("");
+    }else{
+      title=(request.targetName||request.targetId||"대상 없음")+" · "+unifiedTypeName_(request.type);
+      fields=unifiedChangeDetails_(request);
+      if(request.summary)notes+='<div class="approval-note"><b>요청 요약</b>\n'+escapeHtml(request.summary)+'</div>';
+    }
+    modalStudentId=isPayment?String(request.targetId||""):String(request.payload&&request.payload.studentId||"");
+    if(request.accessWarning)notes+='<div class="approval-warning">⚠ '+escapeHtml(request.accessWarning)+'</div>';
+    titleHtml=modalStudentId?'<button type="button" class="student-info-link" data-student-modal-id="'+escapeHtml(modalStudentId)+'">'+escapeHtml(request.targetName||modalStudentId)+'</button>'+escapeHtml(title.substring(String(request.targetName||modalStudentId).length)):escapeHtml(title);
+    return '<article class="approval-card" data-card-request-id="'+escapeHtml(request.id)+'" data-category="'+escapeHtml(request.category)+'"><div class="approval-card-head"><div><div class="approval-card-title">'+titleHtml+'</div><div class="approval-card-meta">요청자 '+escapeHtml(request.requesterName||request.requesterEmail)+' · '+escapeHtml(request.createdAt)+'</div></div><span class="badge" style="background:'+(isPayment?'#e8f0fe':'#e8f0fe')+';color:'+(isPayment?'#174ea6':'#315b96')+';">'+(isPayment?'수납':'학생·운영')+'</span></div><div class="approval-card-grid">'+fields+'</div>'+notes+'<div class="approval-actions">'+evidence+'<button type="button" class="btn-reject" data-action="reject" data-request-id="'+escapeHtml(request.id)+'">반려</button><button type="button" class="btn-approve" data-action="approve" data-request-id="'+escapeHtml(request.id)+'">승인·반영</button></div></article>';
+  }
+
+  function setApprovalFilter_(filter) {
+    approvalActiveFilter = filter || "ALL";
+    renderPaymentApprovalQueue_({ requests:Object.keys(paymentApprovalRequests).map(function(id){return paymentApprovalRequests[id]}) });
+  }
+
+  function renderPaymentApprovalQueue_(result) {
+    var requests=Array.isArray(result.requests)?result.requests:[];
+    paymentApprovalRequests={};requests.forEach(function(r){paymentApprovalRequests[String(r.id)]=r});
+    var all=Object.keys(paymentApprovalRequests).map(function(id){return paymentApprovalRequests[id]});
+    var localCounts={total:all.length,payment:all.filter(function(r){return r.category==="PAYMENT"}).length,change:all.filter(function(r){return r.category==="CHANGE"}).length};
+    renderUnifiedRequestSummary_(result.counts||localCounts);
+    var shown=all.filter(function(r){return approvalActiveFilter==="ALL"||r.category===approvalActiveFilter});
+    var summary=document.getElementById("approvalQueueSummary");
+    if(summary)summary.innerHTML='<button class="approval-filter '+(approvalActiveFilter==="ALL"?'active':'')+'" onclick="setApprovalFilter_(\'ALL\')">전체 '+all.length+'</button><button class="approval-filter '+(approvalActiveFilter==="PAYMENT"?'active':'')+'" onclick="setApprovalFilter_(\'PAYMENT\')">수납 '+all.filter(function(r){return r.category==="PAYMENT"}).length+'</button><button class="approval-filter '+(approvalActiveFilter==="CHANGE"?'active':'')+'" onclick="setApprovalFilter_(\'CHANGE\')">학생·운영 '+all.filter(function(r){return r.category==="CHANGE"}).length+'</button>';
+    var list=document.getElementById("paymentApprovalList");if(!list)return;
+    list.innerHTML=shown.length?shown.map(unifiedRequestCard_).join(""):'<div class="approval-empty">선택한 종류의 승인 대기 요청이 없습니다.</div>';
+  }
+
+  function setApprovalCardBusy_(requestId,busy){var card=document.querySelector('[data-card-request-id="'+CSS.escape(String(requestId))+'"]');if(!card)return;card.querySelectorAll("button").forEach(function(b){b.disabled=!!busy});card.style.opacity=busy?".55":"1"}
+  function approveUnifiedRequest_(requestId) {
+    var request=paymentApprovalRequests[requestId];
+    if(!request)return;
+    if(!confirm((request.targetName||"요청")+" · "+unifiedTypeName_(request.type)+"\n\n확인 후 실제 데이터에 반영하시겠습니까?"))return;
+    setApprovalCardBusy_(requestId,true);
+    google.script.run.withSuccessHandler(function(){
+      delete paymentApprovalRequests[requestId];
+      paymentApprovalLoadedAt=Date.now();
+      renderPaymentApprovalQueue_({requests:Object.keys(paymentApprovalRequests).map(function(id){return paymentApprovalRequests[id]})});
+      showToast("요청을 승인하여 반영했습니다.","success");
+      if(request.type==="STUDENT_CREATE")manualLoadData();
+      else if(request.payload&&Array.isArray(request.payload.studentIds))refreshAffectedDashboardStudents(request.payload.studentIds);
+      else if(request.targetId)refreshAffectedDashboardStudents([request.targetId]);
+    }).withFailureHandler(function(e){
+      setApprovalCardBusy_(requestId,false);
+      showToast(actionableErrorMessage(e,"요청 승인"),"error");
+    }).approveUnifiedRequest(requestId,"");
+  }
+  function rejectUnifiedRequest_(requestId) {
+    var request=paymentApprovalRequests[requestId];
+    if(!request)return;
+    var reason=prompt((request.targetName||"요청")+" 요청의 반려 메모를 입력할 수 있습니다.\n메모 없이 반려하려면 빈 상태로 확인을 누르세요.","");
+    if(reason==null)return;
+    reason=String(reason).trim();
+    setApprovalCardBusy_(requestId,true);
+    google.script.run.withSuccessHandler(function(){
+      delete paymentApprovalRequests[requestId];
+      paymentApprovalLoadedAt=Date.now();
+      renderPaymentApprovalQueue_({requests:Object.keys(paymentApprovalRequests).map(function(id){return paymentApprovalRequests[id]})});
+      showToast("요청을 반려했습니다.","success");
+      if(request.targetId)refreshAffectedDashboardStudents([request.targetId]);
+    }).withFailureHandler(function(e){
+      setApprovalCardBusy_(requestId,false);
+      showToast(actionableErrorMessage(e,"요청 반려"),"error");
+    }).rejectUnifiedRequest(requestId,reason);
+  }
+  function bindApprovalEvidenceControls_() {
+    var modal=document.getElementById("approvalEvidenceModal"),viewport=document.getElementById("approvalEvidenceViewport");
+    if(!modal||modal.dataset.controlsBound==="1")return;
+    modal.dataset.controlsBound="1";
+    window.addEventListener("keydown",function(event){
+      if(modal.style.display!=="flex")return;
+      if(event.key==="Escape"){event.preventDefault();closeApprovalEvidence()}
+      else if(event.key==="+"||event.key==="="){event.preventDefault();changeApprovalEvidenceZoom_(0.25)}
+      else if(event.key==="-"){event.preventDefault();changeApprovalEvidenceZoom_(-0.25)}
+      else if(event.key==="0"){event.preventDefault();fitApprovalEvidence_()}
+    });
+    if(viewport)viewport.addEventListener("dblclick",function(){if(approvalEvidenceScale==null)changeApprovalEvidenceZoom_(0.25);else fitApprovalEvidence_()});
+  }
+
+  function updateApprovalEvidenceZoomLabel_() {
+    var label=document.getElementById("approvalEvidenceZoomLabel");
+    if(label)label.textContent=approvalEvidenceScale==null?"화면 맞춤":Math.round(approvalEvidenceScale*100)+"%";
+  }
+
+  function fitApprovalEvidence_() {
+    var image=document.getElementById("approvalEvidenceImage"),viewport=document.getElementById("approvalEvidenceViewport");
+    if(!image||!image.naturalWidth)return;
+    approvalEvidenceScale=null;
+    image.style.width="auto";image.style.height="auto";image.style.maxWidth="100%";image.style.maxHeight="100%";
+    if(viewport){viewport.scrollLeft=0;viewport.scrollTop=0}
+    updateApprovalEvidenceZoomLabel_();
+  }
+
+  function changeApprovalEvidenceZoom_(delta) {
+    var image=document.getElementById("approvalEvidenceImage"),viewport=document.getElementById("approvalEvidenceViewport");
+    if(!image||!image.naturalWidth||image.style.display==="none")return;
+    var renderedScale=image.getBoundingClientRect().width/image.naturalWidth;
+    var base=approvalEvidenceScale==null?renderedScale:approvalEvidenceScale;
+    approvalEvidenceScale=Math.max(0.25,Math.min(4,Math.round((base+Number(delta||0))*100)/100));
+    image.style.maxWidth="none";image.style.maxHeight="none";image.style.width=Math.round(image.naturalWidth*approvalEvidenceScale)+"px";image.style.height="auto";
+    if(viewport){viewport.scrollLeft=Math.max(0,(viewport.scrollWidth-viewport.clientWidth)/2)}
+    updateApprovalEvidenceZoomLabel_();
+  }
+
+  function openApprovalEvidence_(requestId,fileId){
+    var modal=document.getElementById("approvalEvidenceModal"),image=document.getElementById("approvalEvidenceImage"),loading=document.getElementById("approvalEvidenceLoading"),toolbar=document.getElementById("approvalEvidenceToolbar");
+    approvalEvidenceScale=null;image.style.display="none";image.onload=null;image.removeAttribute("src");loading.style.display="block";loading.textContent="증빙을 불러오는 중입니다.";if(toolbar)toolbar.style.display="none";updateApprovalEvidenceZoomLabel_();modal.style.display="flex";
+    google.script.run.withSuccessHandler(function(result){
+      document.getElementById("approvalEvidenceTitle").textContent=result.fileName||"수납 증빙";
+      image.onload=function(){loading.style.display="none";image.style.display="inline-block";if(toolbar)toolbar.style.display="flex";fitApprovalEvidence_()};
+      image.src=result.dataUrl;
+    }).withFailureHandler(function(e){loading.textContent="증빙 조회 실패: "+((e&&e.message)||e)+"\n창을 닫고 다시 열어보세요. 계속되면 최고 원장에게 파일 접근 권한을 확인해달라고 요청해주세요."}).getPaymentApprovalEvidence(requestId,fileId)
+  }
+  function closeApprovalEvidence(){var modal=document.getElementById("approvalEvidenceModal"),image=document.getElementById("approvalEvidenceImage"),toolbar=document.getElementById("approvalEvidenceToolbar");modal.style.display="none";image.onload=null;image.removeAttribute("src");image.style.display="none";image.style.width="";image.style.height="";approvalEvidenceScale=null;if(toolbar)toolbar.style.display="none";updateApprovalEvidenceZoomLabel_()}
+  window.addEventListener("load",initializePaymentApprovalAccess_);
+</script>

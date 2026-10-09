@@ -1,0 +1,309 @@
+<script>
+      function finalizeMonthSettlements() {
+        if (salaryUiBusy) return;
+        var wrappers = Array.from(document.querySelectorAll("#resultContainer .print-section")).filter(function(wrapper) {
+          return !wrapper.dataset.settlementId;
+        });
+        if (!wrappers.length) {
+          alert("이 조회 월에는 확정할 미확정 원장 정산이 없습니다.");
+          return;
+        }
+        var button = document.getElementById("finalizeMonthBtn");
+        setSalaryUiBusy(true);
+        button.textContent = "전체 서버 확인 중...";
+        var previews = wrappers.map(function(wrapper) {
+          return new Promise(function(resolve, reject) {
+            requestSalaryPreview(wrapper.id, function(preview) {
+              if (!preview) reject(new Error(wrapper.dataset.teacher + " 원장님의 미리보기를 확인할 수 없습니다."));
+              else resolve({ wrapper: wrapper, preview: preview });
+            }, true, reject, true);
+          });
+        });
+        Promise.all(previews).then(function(items) {
+          var total = items.reduce(function(sum, item) { return sum + Number(item.preview.finalAmount || 0); }, 0);
+          return showSalaryMonthConfirmation(document.getElementById("targetMonth").value, items, total).then(function(confirmed) {
+            if (!confirmed) {
+              setSalaryUiBusy(false);
+              button.textContent = "✅ 조회 월 전체 확정";
+              return;
+            }
+            button.textContent = "전체 확정 저장 중...";
+            var requestId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : "SALBATCH-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+            google.script.run.withSuccessHandler(function(result) {
+              setSalaryUiBusy(false);
+              button.textContent = "✅ 조회 월 전체 확정";
+              alert(salaryYmLabel(result.ym) + " 급여 " + Number(result.count || 0) + "명 확정 완료\n합계: " + Number(result.totalFinalAmount || 0).toLocaleString() + "원");
+              salaryAdminInitialized = false;
+              fetchAllData();
+            }).withFailureHandler(function(error) {
+              setSalaryUiBusy(false);
+              button.textContent = "✅ 조회 월 전체 확정";
+              alert(salaryActionableError(error, "월 급여 일괄 확정"));
+            }).finalizeSalarySettlementsBatch({
+              ym: document.getElementById("targetMonth").value,
+              requestId: requestId,
+              items: items.map(function(item) {
+                return {
+                  ym: item.preview.ym,
+                  teacherId: item.preview.teacher.id,
+                  previewToken: item.preview.previewToken,
+                  expectedFinalAmount: item.preview.finalAmount,
+                  exclusions: item.preview.exclusions || [],
+                  adjustments: item.preview.adjustments || []
+                };
+              })
+            });
+          });
+        }).catch(function(error) {
+          setSalaryUiBusy(false);
+          button.textContent = "✅ 조회 월 전체 확정";
+          alert(salaryActionableError(error, "월 급여 전체 확정 전 검증"));
+        });
+      }
+
+      function smartClose(event) {
+        try { if (window.top === window.self) return true; if (document.referrer.indexOf("docs.google.com") !== -1) { event.preventDefault(); google.script.host.close(); return false; } return true; } 
+        catch(e) { event.preventDefault(); google.script.host.close(); return false; }
+      }
+
+      
+      function generatePdfFromElement(element, filename) {
+        window.scrollTo(0, 0); 
+        element.classList.add('pdf-mode');
+        
+        var opt = { 
+          margin:       [8, 8, 8, 8], 
+          filename:     filename, 
+          image:        { type: 'jpeg', quality: 0.98 }, 
+          html2canvas:  { 
+            scale: 2, 
+            useCORS: true, 
+            allowTaint: true, 
+            logging: false,
+            scrollX: 0, 
+            scrollY: 0,
+            windowWidth: 1140
+          }, 
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }, 
+          pagebreak:    { mode: ['css', 'legacy'], avoid: ['tr', '.print-header', '.summary-cards', '.print-details'], after: '.print-section' } 
+        };
+        
+        return html2pdf().set(opt).from(element).save().then(function() { 
+          element.classList.remove('pdf-mode'); 
+        }).catch(function(err) {
+          element.classList.remove('pdf-mode');
+          throw err;
+        });
+      }
+
+      function exportSafeFilenamePart(value) {
+        return String(value || "")
+          .replace(/[\\/:*?"<>|]/g, "_")
+          .replace(/\s+/g, " ")
+          .trim() || "정산서";
+      }
+
+      function exportCanvasBlob(canvas) {
+        return new Promise(function(resolve, reject) {
+          canvas.toBlob(function(blob) {
+            if (blob) resolve(blob);
+            else reject(new Error("이미지 파일을 만들지 못했습니다."));
+          }, "image/png");
+        });
+      }
+
+      function downloadExportBlob(blob, filename) {
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+      }
+
+      function exportImagePageCuts(element, canvas, pageHeight) {
+        var elementRect = element.getBoundingClientRect();
+        var scale = elementRect.width > 0 ? canvas.width / elementRect.width : 1;
+        var rowBottoms = Array.from(element.querySelectorAll("tr")).map(function(row) {
+          return Math.round((row.getBoundingClientRect().bottom - elementRect.top) * scale);
+        }).filter(function(bottom) { return bottom > 0 && bottom < canvas.height; });
+        var cuts = [0];
+        while (cuts[cuts.length - 1] < canvas.height) {
+          var start = cuts[cuts.length - 1];
+          var desired = Math.min(canvas.height, start + pageHeight);
+          if (desired < canvas.height) {
+            var minimumUsefulPage = start + Math.round(pageHeight * 0.55);
+            var safeCut = rowBottoms.filter(function(bottom) {
+              return bottom >= minimumUsefulPage && bottom <= desired - 4;
+            }).pop();
+            if (safeCut) desired = safeCut;
+          }
+          if (desired <= start) desired = Math.min(canvas.height, start + pageHeight);
+          cuts.push(desired);
+        }
+        return cuts;
+      }
+
+      async function generateImagesFromElement(element, filenameBase) {
+        window.scrollTo(0, 0);
+        element.classList.add("pdf-mode");
+        try {
+          if (document.fonts && document.fonts.ready) await document.fonts.ready;
+          var canvas = await html2pdf().set({
+            html2canvas: {
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: "#ffffff",
+              logging: false,
+              scrollX: 0,
+              scrollY: 0,
+              windowWidth: 1140
+            }
+          }).from(element).toCanvas().get("canvas");
+          // A4 가로 297×210mm에서 상하좌우 8mm 여백을 뺀 실제 출력 영역 비율입니다.
+          var pageHeight = Math.max(1, Math.floor(canvas.width * (194 / 281)));
+          var cuts = exportImagePageCuts(element, canvas, pageHeight);
+          var totalPages = cuts.length - 1;
+          for (var pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+            var sourceY = cuts[pageIndex];
+            var sourceHeight = cuts[pageIndex + 1] - sourceY;
+            var pageCanvas = document.createElement("canvas");
+            pageCanvas.width = canvas.width;
+            pageCanvas.height = pageHeight;
+            var context = pageCanvas.getContext("2d");
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+            context.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight);
+            var blob = await exportCanvasBlob(pageCanvas);
+            var pageNo = String(pageIndex + 1).padStart(2, "0");
+            var pageTotal = String(totalPages).padStart(2, "0");
+            downloadExportBlob(blob, exportSafeFilenamePart(filenameBase) + "_" + pageNo + "-" + pageTotal + ".png");
+            await new Promise(function(resolve) { setTimeout(resolve, 180); });
+          }
+          return totalPages;
+        } finally {
+          element.classList.remove("pdf-mode");
+        }
+      }
+
+      // =====================================================================
+      // ★ 신규 통합 내보내기 모달 및 실행 로직
+      // =====================================================================
+      function openExportModal() {
+        if (salaryUiBusy) { alert("급여 데이터를 처리 중입니다. 완료된 후 다시 시도해주세요."); return; }
+        var select = document.getElementById("exportTeacherSelect");
+        var currentTeacher = document.getElementById("teacherSelect").value;
+        var teachers = [];
+        Array.from(document.querySelectorAll("#resultContainer .print-section")).forEach(function(section) {
+          var teacher = String(section.dataset.teacher || "").trim();
+          if (teacher && teachers.indexOf(teacher) < 0) teachers.push(teacher);
+        });
+        select.innerHTML = '<option value="">전체 원장</option>';
+        teachers.forEach(function(teacher) {
+          var option = document.createElement("option");
+          option.value = teacher;
+          option.textContent = teacher + " 원장";
+          select.appendChild(option);
+        });
+        select.value = currentTeacher && teachers.indexOf(currentTeacher) >= 0 ? currentTeacher : "";
+        document.getElementById("exportModal").style.display = "flex";
+      }
+      function closeExportModal() { document.getElementById("exportModal").style.display = "none"; }
+
+      // 화면이 지워지지 않도록 투명 로딩창 생성
+      function showScreenLoader(msg) {
+        var div = document.createElement("div"); div.id = "screenLoader";
+        div.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); color:white; display:flex; justify-content:center; align-items:center; font-size:20px; font-weight:bold; z-index:9999;";
+        div.innerText = msg; document.body.appendChild(div);
+      }
+      function hideScreenLoader() { var div = document.getElementById("screenLoader"); if(div) div.remove(); }
+
+      function fetchSalaryPrintData(settlementId) {
+        return new Promise(function(resolve, reject) {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getSalarySettlementPrintData(settlementId);
+        });
+      }
+
+      async function buildPreparedExport(visibleSections) {
+        var container = document.getElementById("preparedExportContainer");
+        container.innerHTML = "";
+        for (var i = 0; i < visibleSections.length; i++) {
+          var source = visibleSections[i];
+          var settlementId = source.dataset.settlementId || "";
+          if (!settlementId) {
+            var draft = source.cloneNode(true);
+            draft.classList.add("draft-watermark");
+            draft.querySelectorAll("[id]").forEach(function(element, index) { element.id = "draft_export_" + i + "_" + index; });
+            container.appendChild(draft);
+            continue;
+          }
+          var printData = await fetchSalaryPrintData(settlementId);
+          if (!printData || !printData.printable) throw new Error("확정본 출력 데이터를 확인할 수 없습니다.");
+          if (printData.summaryOnly) {
+            renderProtectedSettlement(container, printData.ym, printData.teacher, { summaryOnly:true }, printData.settlement);
+          } else {
+            printData.settlement.snapshotVersion = printData.snapshotVersion || 1;
+            renderResult(container, printData.ym, printData.teacher, printData.data, false, false, printData.settlement);
+          }
+        }
+        return container;
+      }
+
+      async function executeExport() {
+        var targetTeacher = document.getElementById("exportTeacherSelect").value;
+        var method = document.querySelector('input[name="exportMethod"]:checked').value;
+        var ym = document.getElementById("targetMonth").value;
+        
+        closeExportModal();
+
+        var visibleSections = Array.from(document.querySelectorAll("#resultContainer .print-section")).filter(function(section) {
+          return !targetTeacher || section.dataset.teacher === targetTeacher;
+        });
+        if (visibleSections.length === 0) { alert("출력할 데이터가 없습니다."); return; }
+        setSalaryUiBusy(true);
+        showScreenLoader("⏳ 확정 당시 계산 자료를 확인하고 출력물을 준비 중입니다...");
+        var prepared;
+        try {
+          prepared = await buildPreparedExport(visibleSections);
+          if (method === "print") {
+            hideScreenLoader();
+            document.body.classList.add("print-prepared");
+            window.print();
+            document.body.classList.remove("print-prepared");
+          } else {
+            prepared.style.cssText = "display:block; position:absolute; left:-10000px; top:0; width:1120px; background:white;";
+            await new Promise(r => setTimeout(r, 300));
+            var preparedSections = Array.from(prepared.querySelectorAll(".print-section"));
+            if (method === "pdf_separate") {
+              for (var i = 0; i < preparedSections.length; i++) {
+                var tName = preparedSections[i].querySelector(".ph_sub_name").innerText.replace("담당: ", "").replace(" 원장님", "");
+                await generatePdfFromElement(preparedSections[i], ym + "_" + tName + "원장_정산서.pdf");
+              }
+            } else if (method === "pdf_merged") {
+              await generatePdfFromElement(prepared, ym + "_정산서_통합본.pdf");
+            } else if (method === "image_separate") {
+              var savedImageCount = 0;
+              for (var imageIndex = 0; imageIndex < preparedSections.length; imageIndex++) {
+                var imageTeacher = preparedSections[imageIndex].querySelector(".ph_sub_name").innerText.replace("담당: ", "").replace(" 원장님", "");
+                savedImageCount += await generateImagesFromElement(
+                  preparedSections[imageIndex], ym + "_" + imageTeacher + "원장_정산서"
+                );
+              }
+              alert("개별 이미지 " + savedImageCount + "장을 저장했습니다. 브라우저가 여러 파일 저장 허용을 물으면 허용해주세요.");
+            }
+          }
+        } catch (error) {
+          alert(salaryActionableError(error, "급여 출력 준비"));
+        } finally {
+          document.body.classList.remove("print-prepared");
+          if (prepared) { prepared.innerHTML = ""; prepared.style.cssText = ""; }
+          hideScreenLoader();
+          setSalaryUiBusy(false);
+        }
+
+      }
+</script>

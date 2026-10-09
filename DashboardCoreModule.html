@@ -1,0 +1,538 @@
+<script>
+      // [추가] 메모 팝업 열기 함수
+      function openMemoPopup(text) {
+        // 팝업 안의 div에 텍스트 넣기
+        document.getElementById("memoViewContent").innerText = text; 
+        document.getElementById("memoModal").style.display = "flex";
+      }
+      var rawList = []; 
+      var currentMonths = {}; 
+      var lastSelectedMethod = "카드";
+      var lastSelectedPayDate = "";
+      var currentFamilyTargets = [];
+      var isDashboardLoading = false;
+      var latestLoadSeq = 0;
+      var pendingPaymentRequestId = "";
+      var frozenStudentFilterIds = null;
+      var frozenStudentFilterMap = null;
+      var paymentAttemptFilterIds = [];
+      var dashboardHistoryStudentId = "";
+      var dashboardHistoryItems = [];
+      var dashboardHistoryRequestVersion = 0;
+      var dashboardHistoryLoadedStudentId = "";
+      var pendingDashboardPerformance = null;
+      var dashboardAccess = { isSuperAdmin:false, canEdit:false, canRequest:false, canCreatePayment:false, canEditPayments:false, teacherId:"", scopeMode:"NONE" };
+      function applyDashboardAccessUI_() {
+        var canEdit = !!dashboardAccess.canEdit;
+        Array.prototype.forEach.call(document.querySelectorAll(".btn-quick-student-add"), function(button) { button.style.display = dashboardAccess.canCreateStudent ? "" : "none"; });
+        Array.prototype.forEach.call(document.querySelectorAll(".btn-open-history"), function(button) { button.style.display = dashboardAccess.canEditPayments ? "" : "none"; });
+        var guide = document.getElementById("dashboardGuideText");
+        if (guide && !canEdit) {
+          var scopeGuide = dashboardAccess.scopeMode === "ALL_STUDENTS" ? "모든 학생을 볼 수 있는 계정입니다."
+            : dashboardAccess.scopeMode === "LINKED_TEACHER" ? "선택한 원장의 학생만 표시됩니다."
+            : "볼 수 있는 학생이 지정되지 않아 학생 목록이 비어 있습니다.";
+          guide.innerHTML = "<b>저장 안내:</b> 학생 등록과 수납은 최고 원장이 확인한 뒤 반영됩니다. " + scopeGuide;
+        }
+      }
+      function createClientRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+        return "REQ-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+      }
+
+      function hasPositivePayment(list) {
+        return Array.isArray(list) && list.some(function(payment) { return Number(payment.amount) > 0; });
+      }
+
+      window.onload = function() {
+        ensureTargetMonthValue();
+        bindTableEvents();
+        loadData(false);
+      };
+
+      function ensureTargetMonthValue() {
+        var input = document.getElementById("targetMonth");
+        if (!input) return "";
+        var value = String(input.value || "").trim();
+        if (/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return value;
+        var today = new Date();
+        var yyyy = today.getFullYear();
+        var monthIndex = today.getMonth();
+        if (today.getDate() < dashboardMonthCutoffDay) {
+          monthIndex -= 1;
+          if (monthIndex < 0) { monthIndex = 11; yyyy -= 1; }
+        }
+        var mm = ("0" + (monthIndex + 1)).slice(-2);
+        input.value = yyyy + "-" + mm;
+        return input.value;
+      }
+
+      function hasAdditionalFilters() {
+        return document.getElementById("filterEnrollment").value !== "DEFAULT" ||
+          document.getElementById("filterTeacher").value !== "ALL" ||
+          document.getElementById("filterStatus").value !== "ALL";
+      }
+
+      function updateAdditionalFilterIndicator() {
+        var indicator = document.getElementById("filterStateIndicator");
+        if (!indicator) return;
+        var active = hasAdditionalFilters();
+        indicator.classList.toggle("active", active);
+        indicator.title = active ? "클릭하면 재원 여부·담당 원장·납부 상태 필터를 초기화합니다." : "추가 필터가 적용되지 않았습니다.";
+        indicator.setAttribute("aria-label", active ? "추가 필터 사용 중. 클릭하면 초기화" : "추가 필터 없음");
+        indicator.setAttribute("aria-pressed", active ? "true" : "false");
+      }
+
+      function handleAdditionalFilterChange() {
+        // 납부 직후 고정된 검색 결과는 사용자가 새 필터 조건을 선택하거나 해제하는
+        // 순간 종료합니다. 검색창 X 상태도 함께 갱신해 빈 검색에 고정 표시가 남지 않게 합니다.
+        releasePinnedStudentFilter();
+        toggleClearBtn();
+        updateAdditionalFilterIndicator();
+        applySortAndFilter();
+      }
+
+      function clearAdditionalFilters() {
+        var hadAdditionalFilters = hasAdditionalFilters();
+        var hadPinnedResults = !!frozenStudentFilterIds;
+        releasePinnedStudentFilter();
+        toggleClearBtn();
+        if (!hadAdditionalFilters) {
+          if (hadPinnedResults) applySortAndFilter();
+          return;
+        }
+        document.getElementById("filterEnrollment").value = "DEFAULT";
+        document.getElementById("filterTeacher").value = "ALL";
+        document.getElementById("filterStatus").value = "ALL";
+        updateAdditionalFilterIndicator();
+        applySortAndFilter();
+      }
+
+      function loadData(forceRefresh) {
+        var ym = ensureTargetMonthValue();
+        var loadSeq = ++latestLoadSeq;
+        var loadStartedAt = performance.now();
+        isDashboardLoading = true;
+        document.getElementById("tableBody").innerHTML = '<tr><td colspan="19">⏳ 조회 중...</td></tr>';
+        
+        google.script.run.withSuccessHandler(function(res){
+          if (loadSeq !== latestLoadSeq) return;
+          var responseAt = performance.now();
+          try {
+            if (!res || !res.months || !Array.isArray(res.list) || !Array.isArray(res.teachers)) {
+              var responseKeys = res && typeof res === "object" ? Object.keys(res).join(",") : "없음";
+              throw new Error("서버 조회 결과 형식이 올바르지 않습니다. " +
+                "응답형=" + Object.prototype.toString.call(res) +
+                ", 키=" + responseKeys +
+                ", 목록배열=" + !!(res && Array.isArray(res.list)) +
+                ", 담당자배열=" + !!(res && Array.isArray(res.teachers)));
+            }
+            currentMonths = res.months;
+            dashboardAccess = res.access || dashboardAccess;
+            applyDashboardAccessUI_();
+            window.dashboardBootstrapState = res;
+            if (typeof window.applyAppNavigationState === "function" && res.navigationState) {
+              window.applyAppNavigationState(res.navigationState);
+            }
+            window.dispatchEvent(new CustomEvent("dashboard-bootstrap-ready", { detail:res }));
+            document.getElementById("th_prev").innerText = res.months.prev;
+            document.getElementById("th_curr").innerText = res.months.curr + " (현재)";
+            document.getElementById("th_next").innerText = res.months.next;
+
+            var teacherSel = document.getElementById("filterTeacher");
+            var previousTeacherFilter = teacherSel.value || "ALL";
+            teacherSel.innerHTML = '<option value="ALL">전체 보기</option>';
+            res.teachers.forEach(function(t) {
+              var opt = document.createElement("option"); opt.value = t; opt.text = t + " 원장"; teacherSel.appendChild(opt);
+            });
+            teacherSel.value = Array.from(teacherSel.options).some(function(option) { return option.value === previousTeacherFilter; })
+              ? previousTeacherFilter : "ALL";
+
+            rawList = res.list;
+            pendingDashboardPerformance = {
+              targetYm: ym,
+              forceRefresh: !!forceRefresh,
+              cacheHit: !!(res.performance && res.performance.cacheHit),
+              cacheReadStatus: String(res.performance && res.performance.cacheReadStatus || ""),
+              cacheWriteStatus: String(res.performance && res.performance.cacheWriteStatus || ""),
+              serverMs: Number(res.performance && res.performance.serverMs) || 0,
+              responseMs: Math.round(responseAt - loadStartedAt),
+              responseAt: responseAt,
+              loadStartedAt: loadStartedAt,
+              resultRows: res.list.length,
+              responseChars: JSON.stringify(res).length
+            };
+            isDashboardLoading = false;
+            applySortAndFilter();
+          } catch (clientError) {
+            reportDashboardClientFailure("조회 결과 화면 반영", clientError);
+          }
+        })
+        .withFailureHandler(function(err){
+          if (loadSeq !== latestLoadSeq) return;
+          isDashboardLoading = false;
+          pendingDashboardPerformance = null;
+          var message = err && err.message ? err.message : String(err || "알 수 없는 오류");
+          document.getElementById("tableBody").innerHTML = '<tr><td colspan="19">❌ 조회 실패: ' + escapeHtml(message) + '<br>조회 월을 다시 확인하거나 화면을 새로고침해주세요.</td></tr>';
+          showToast("조회 실패: " + message, "error");
+        })
+        .getDashboardDataWithPolicyForHtml(ym, !!forceRefresh);
+      }
+
+      function reportDashboardClientFailure(stage, error) {
+        isDashboardLoading = false;
+        var message = error && error.message ? error.message : String(error || "알 수 없는 브라우저 오류");
+        document.getElementById("tableBody").innerHTML = '<tr><td colspan="19">❌ 화면 처리 실패: ' + escapeHtml(message) + '</td></tr>';
+        google.script.run
+          .withSuccessHandler(function(diagnosticId) {
+            showToast("화면 처리 실패: " + message + " / 오류 ID: " + diagnosticId, "error");
+          })
+          .withFailureHandler(function() {
+            showToast("화면 처리 실패: " + message, "error");
+          })
+          .logDashboardClientFailure(stage, message, error && error.stack ? error.stack : "", ensureTargetMonthValue());
+      }
+
+      function manualLoadData() {
+        releasePinnedStudentFilter();
+        loadData(true);
+      }
+
+      function applySortAndFilter() {
+        updateAdditionalFilterIndicator();
+        if (isDashboardLoading) {
+          document.getElementById("tableBody").innerHTML = '<tr><td colspan="19">⏳ 데이터를 불러온 뒤 검색합니다...</td></tr>';
+          return;
+        }
+        if (!rawList || rawList.length === 0) {
+          renderTable([]);
+          return;
+        }
+
+        var teacherFilter = document.getElementById("filterTeacher").value;
+        var statusFilter = document.getElementById("filterStatus").value;
+        var enrollFilter = document.getElementById("filterEnrollment").value;
+        var sortOption = document.getElementById("sortOption").value;
+        
+        var searchEl = document.getElementById("searchName");
+        var searchText = searchEl ? searchEl.value.trim() : ""; 
+
+        var filtered = rawList.filter(function(item) {
+          var passFrozenResult = !frozenStudentFilterMap || !!frozenStudentFilterMap[String(item.id)];
+          var passTeacher = (teacherFilter === "ALL" || item.teacher === teacherFilter);
+          var passStatus = (statusFilter === "ALL" || item.status === statusFilter);
+          
+          var passEnroll = false;
+          if (enrollFilter === "DEFAULT") {
+             passEnroll = (item.enrollment === "재원") ||
+               (item.enrollment === "퇴원" && (item.hasPaymentInWindow || item.retiredCarryover));
+          } else if (enrollFilter === "ALL") {
+             passEnroll = true;
+          } else {
+             passEnroll = (item.enrollment === enrollFilter);
+          }
+
+          // 완성형, 순수 초성, 혼합형 검색은 공통 검색 규칙을 사용합니다.
+          var matchName = CommonStudentPicker.matches(item.name, searchText);
+          
+          // 전화번호 & 학년 매칭
+          var phone = String(item.phone || "").replace(/[^0-9]/g, ""); 
+          var normalizedSearch = CommonStudentPicker.normalizeQuery(searchText);
+          var matchPhone = (phone.indexOf(normalizedSearch) !== -1);
+          var grade = String(item.grade || "");
+          var matchGrade = CommonStudentPicker.matches(grade, searchText);
+
+          // 최종 이름 검색 통과 여부
+          var passName = (searchText === "" || matchName || matchPhone || matchGrade);
+
+          // 수납을 시도한 시점의 검색 결과 전체를 그대로 유지합니다.
+          // 검색 입력·Enter·X·조회 및 추가 필터 변경이 발생하면 고정이 풀리고 일반 필터가 적용됩니다.
+          if (frozenStudentFilterIds) return passFrozenResult;
+          return passTeacher && passStatus && passEnroll && passName; 
+        });
+
+        filtered.sort(function(a, b) {
+          if (sortOption === "NAME_ASC") return a.name.localeCompare(b.name);
+          if (sortOption === "GRADE_ASC") return a.grade.localeCompare(b.grade);
+          return 0;
+        });
+        
+        renderTable(filtered);
+      }
+
+      // =================================================================
+      // 🚀 렌더링 상태 변수 (중복 선언 제거됨)
+      // =================================================================
+      var globalRenderList = [];
+      var renderChunkSize = 50; 
+      var renderIndex = 0;
+      var renderToken = 0;
+
+      function escapeHtml(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) {
+          return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];
+        });
+      }
+
+      function renderTable(list) {
+        var tbody = document.getElementById("tableBody");
+        renderToken++;
+        if (pendingDashboardPerformance && pendingDashboardPerformance.renderStartedAt == null) {
+          pendingDashboardPerformance.renderStartedAt = performance.now();
+          pendingDashboardPerformance.prepareMs = Math.round(
+            pendingDashboardPerformance.renderStartedAt - pendingDashboardPerformance.responseAt
+          );
+        }
+        tbody.innerHTML = ""; 
+        
+        if (!list || list.length === 0) { 
+          tbody.innerHTML = '<tr><td colspan="19" style="padding:20px;">데이터 없음</td></tr>'; 
+          finishDashboardPerformance_(renderToken, 0);
+          return; 
+        }
+
+        globalRenderList = list;
+        renderIndex = 0;
+        renderNextChunk(renderToken);
+      }
+
+      function renderNextChunk(token) {
+        if (token !== renderToken) return;
+        var tbody = document.getElementById("tableBody");
+        var fragment = document.createDocumentFragment(); 
+        var limit = Math.min(renderIndex + renderChunkSize, globalRenderList.length);
+
+        // ★ [개선] 기기 감지 로직(User-Agent) 삭제 -> 중앙 통제식 클릭으로 일원화
+        for (var i = renderIndex; i < limit; i++) {
+          var s = globalRenderList[i];
+          
+          var isRetired = (s.enrollment === "퇴원");
+          var rowClass = isRetired ? "retired-row" : "";
+          
+          var safeId = escapeHtml(String(s.id || "").replace(/[\r\n]+/g, ""));
+          var feeFmt = s.specialOnly ? "특강" : (s.fee ? Number(s.fee).toLocaleString() : "-");
+          
+          var nameDisplay = escapeHtml(String(s.name || "").replace(/[\r\n]+/g, ""));
+          if(s.firstDateYm && currentMonths.prev <= s.firstDateYm && s.firstDateYm <= currentMonths.next) nameDisplay = "🐥 " + nameDisplay;
+          if(s.familyId) nameDisplay = "👨‍👩‍👦 " + nameDisplay;
+          if(isRetired) nameDisplay += '<span class="retired-tag">퇴원</span>';
+
+          var warnIconHtml = "";     
+          if (s.validation && s.validation.level > 0) {
+              var v = s.validation;
+              var icon = (v.level === 2) ? "⛔" : "⚠️";
+              var colorStyle = (v.level === 2) ? "color:red;" : "color:#f57f17;"; 
+              var tooltipText = (v.level === 2 ? "[주의] " : "[확인] ") + (v.msg || "금액 차이") + "\n------------------\n규정: " + Number(v.expected).toLocaleString() + "\n납부: " + Number(v.real).toLocaleString() + "\n차액: " + Number(v.diff).toLocaleString();
+              warnIconHtml = '<span style="cursor:help; margin-right:3px; font-size:12px; ' + colorStyle + '" title="' + tooltipText.replace(/"/g, '&quot;') + '">' + icon + '</span>';
+          }
+
+          var badgeHtml = "";
+          if (isRetired) badgeHtml = '<span class="badge" style="background:#f5f5f5; color:#888; border:1px solid #ccc;">퇴원</span>';
+          else if (s.firstDateYm && currentMonths.curr < s.firstDateYm) badgeHtml = '<span class="badge bg-new-yellow">신입</span>';
+          else {
+              if (s.status === "특강") badgeHtml = '<span class="badge" style="background:#e8f0fe;color:#174ea6;border:1px solid #aecbfa;">특강</span>';
+              else if (s.status === "완납") badgeHtml = '<span class="badge bg-green">완납</span>';
+              else if (s.status === "휴원") badgeHtml = '<span class="badge" style="background:#eeeeee; color:#666666; border:1px solid #ddd;">휴원</span>';
+          else if (s.status === "부분납") badgeHtml = '<span class="badge" style="background:#fce8b2;color:#8a5300;">부분납</span>';
+          else {
+            var streakPrefix = Number(s.unpaidStreak) >= 2
+              ? '<span class="unpaid-streak-prefix">' + Number(s.unpaidStreak) + '달 연속 · </span>'
+              : '';
+            badgeHtml = '<span class="badge bg-red">' + streakPrefix + '미납</span>';
+          }
+          }
+          var allPendingPayments = s.pendingPayments && Array.isArray(s.pendingPayments.all)
+            ? s.pendingPayments.all : [];
+          if (allPendingPayments.length) {
+            var pendingStatusTooltip = allPendingPayments.map(function(item) {
+              item = item || {};
+              var month = item.month || "월 미정";
+              return month + " · " + (item.type || "수납") + " · " + Number(item.amount || 0).toLocaleString() + "원";
+            }).join("\n");
+            badgeHtml += '<span class="badge pending-payment-status" title="' + escapeHtml("실제 수납이 아닌 승인 대기 납부 예정입니다.\n" + pendingStatusTooltip) + '">🕓 요청' +
+              (allPendingPayments.length > 1 ? " " + allPendingPayments.length + "건" : "") + '</span>';
+          }
+
+          var getCells = function(payList, isCurr, hasBorder, colYm, periodType) {
+              var cellClass = "cell-base " + (isCurr ? "curr-bg" : "") + (hasBorder ? " border-left" : "");
+              var amtClass = "cell-amt " + (isCurr ? "curr-bg" : "") + (hasBorder ? " border-left" : "");
+              var emptyStyle = 'style="' + (isCurr ? 'background:#f8fbff;' : '') + (hasBorder ? ' border-left: 2px solid #dfe1e5;' : '') + '"';
+
+              if (payList && !Array.isArray(payList)) payList = payList.date ? [payList] : [];
+              var pendingList = s.pendingPayments && Array.isArray(s.pendingPayments[periodType])
+                ? s.pendingPayments[periodType] : [];
+              var pendingTotal = pendingList.reduce(function(sum, item) { return sum + Number(item.amount || 0); }, 0);
+              var pendingTooltip = escapeHtml(pendingList.map(function(item) {
+                return "[승인 요청 중] " + (item.payDate || "날짜 미정") + " · " + (item.type || "수납") +
+                  " · " + Number(item.amount || 0).toLocaleString() + "원" + (item.method ? " · " + item.method : "");
+              }).join("\n"));
+              var pendingCountText = pendingList.length > 1 ? " · " + pendingList.length + "건" : "";
+              
+              // 1. 데이터가 없을 때의 처리
+              if (!payList || payList.length === 0) {
+                  if (pendingList.length) {
+                    return '<td class="pending-payment-cell' + (hasBorder ? ' border-left' : '') + '" colspan="4" title="' + pendingTooltip + '">' +
+                      '<span class="pending-payment-chip">🕓 <span>승인 요청 중 · <strong>납부 예정 ' + pendingTotal.toLocaleString() + '원</strong>' + pendingCountText + '</span></span></td>';
+                  }
+                  if (s.firstDateYm && colYm < s.firstDateYm) return '<td ' + emptyStyle + ' colspan="4" style="text-align:center; padding:4px;"><span class="badge-clean-date">📅 ' + s.firstDateFull + ' 입학</span></td>';
+                  if (s.exitDateYm && colYm > s.exitDateYm) return '<td ' + emptyStyle + ' colspan="4" style="text-align:center; padding:4px;"><span class="badge-clean-date" style="background:#fce8e6; color:#c5221f; border:1px solid #f28b82;">👋 ' + s.exitDateFull + ' 퇴원</span></td>';
+                  return '<td class="' + cellClass + '"></td><td class="' + amtClass + '">' + (isCurr && warnIconHtml ? warnIconHtml : "") + '</td><td class="' + cellClass + '"></td><td class="' + cellClass + '"></td>';
+              }
+
+              var actionAttr = dashboardAccess.canEditPayments ? 'data-action="multiSelect" data-period="' + periodType + '" data-studentid="' + safeId + '"' : '';
+              var tooltip = escapeHtml(payList.map(function(p){ return "["+p.date+"] "+(p.type||"")+" "+Number(p.amount).toLocaleString(); }).join("\n"));
+              
+              // 2. 휴원 처리 로직
+              var hasRealPayment = payList.some(function(p) { return Number(p.amount) > 0; });
+              var vacationItem = payList.find(function(p) { return (p.type === "휴원" || p.type === "휴가"); });
+
+              if (!hasRealPayment && vacationItem) {
+                  var monthNum = parseInt(colYm.split("-")[1]);
+                  var safeReason = escapeHtml(vacationItem.memo || "");
+                  return '<td ' + emptyStyle + ' colspan="4" style="text-align:center; padding:4px;" data-action="memoPopup" data-memo="[' + vacationItem.date + '] ' + safeReason + '" style="cursor:pointer;"><span style="background:#fff9c4; color:#f57f17; padding:4px 12px; border-radius:12px; font-size:11px; font-weight:bold; border:1px solid #fff59d; display:inline-block;">🏖️ ' + monthNum + '월 휴원</span></td>';
+              }
+
+              // 3. 금액 및 메모 계산 로직
+              var totalAmt = 0; var extraInfo = [];
+              payList.forEach(function(item) {
+                  totalAmt += Number(item.amount);
+                  var type = item.type || "수강료"; 
+                  if (type !== "수강료" && type !== "휴원" && Number(item.amount) > 0) {
+                      var manUnit = Math.floor(Number(item.amount) / 10000); extraInfo.push(type + " " + manUnit);
+                  }
+              });
+  
+              var amtDisplay = totalAmt.toLocaleString();
+              if (extraInfo.length > 0) amtDisplay += ' <span style="font-size:10px; color:#1a73e8;">(+' + extraInfo.join(",") + ')</span>';
+              if (isCurr && warnIconHtml) amtDisplay = warnIconHtml + " " + amtDisplay;
+              if (pendingList.length) {
+                amtDisplay += '<span class="pending-payment-inline" title="' + pendingTooltip + '">🕓 승인 요청 중 · 예정 ' +
+                  pendingTotal.toLocaleString() + '원' + pendingCountText + '</span>';
+              }
+
+              var methodDisplay = "-";
+              var realPayments = payList.filter(function(p) { return Number(p.amount) > 0; });
+              if (realPayments.length > 0) {
+                  var methods = [];
+                  realPayments.forEach(function(p){ if(p.method && methods.indexOf(p.method) === -1) methods.push(p.method); });
+                  methodDisplay = (methods.length > 1) ? "복합" : (methods[0] || "-");
+              } else if (payList.length > 0) {
+                  methodDisplay = payList[0].method || "-";
+              }
+
+              var allMemos = [];
+              payList.forEach(function(p) { if (p.memo && p.memo.trim().length > 0) allMemos.push((payList.length > 1 ? "[" + p.date + "] " : "") + p.memo.trim()); });
+              var memoDisplay = ""; var memoActionAttr = "";
+              if (allMemos.length > 0) {
+                  var fullMemoText = escapeHtml(allMemos.join("\n"));
+                  memoDisplay = (allMemos.join("").indexOf("[일할]") !== -1) ? '<span style="color:#d93025; font-weight:bold; font-size:11px;">[일할]..</span>' : '<span style="font-size:14px;">📝</span>';
+                  memoActionAttr = 'data-action="memoPopup" data-memo="' + fullMemoText + '"';
+              }
+
+              // 4. 최종 리턴
+              return '<td class="' + cellClass + '" ' + actionAttr + ' title="' + tooltip + '">' + (payList[0] ? payList[0].date : "") + '</td>' +
+                     '<td class="' + amtClass + '" ' + actionAttr + ' title="' + tooltip + '">' + amtDisplay + '</td>' +
+                     '<td class="' + cellClass + '" ' + actionAttr + '>' + methodDisplay + '</td>' +
+                     '<td class="' + cellClass + '" ' + memoActionAttr + ' style="cursor:pointer;">' + memoDisplay + '</td>';
+          };
+
+          var tr = document.createElement("tr");
+          tr.className = rowClass;
+          tr.innerHTML = 
+            '<td>' + escapeHtml(s.grade) + '</td>' + 
+            '<td class="clickable-name" data-action="studentInfo" data-studentid="' + safeId + '" style="text-align:left; padding-left:5px;">' + nameDisplay + '</td>' +
+            '<td>' + escapeHtml(s.teacher) + '</td>' +
+            '<td class="money">' + feeFmt + '</td><td>' + (s.baseDay||1) + '</td>' + 
+            '<td>' + badgeHtml + '</td>' +
+            '<td>' + (dashboardAccess.canCreatePayment ? '<button class="btn-p" data-action="payment" data-studentid="' + safeId + '">P</button>' : '-') + '</td>' +
+            getCells(s.curr, true, true, currentMonths.curr, "curr") + 
+            getCells(s.prev, false, true, currentMonths.prev, "prev") + 
+            getCells(s.next, false, true, currentMonths.next, "next");
+          
+          
+          fragment.appendChild(tr);
+        }
+
+        tbody.appendChild(fragment);
+        renderIndex += renderChunkSize;
+        if (renderIndex < globalRenderList.length) {
+          setTimeout(function() { renderNextChunk(token); }, 0);
+        } else {
+          finishDashboardPerformance_(token, globalRenderList.length);
+        }
+      }
+
+      function finishDashboardPerformance_(token, renderedRows) {
+        if (token !== renderToken || !pendingDashboardPerformance) return;
+        var metrics = pendingDashboardPerformance;
+        pendingDashboardPerformance = null;
+        var finishedAt = performance.now();
+        metrics.renderMs = Math.round(finishedAt - (metrics.renderStartedAt || finishedAt));
+        metrics.totalMs = Math.round(finishedAt - metrics.loadStartedAt);
+        metrics.renderedRows = Number(renderedRows) || 0;
+        delete metrics.loadStartedAt;
+        delete metrics.responseAt;
+        delete metrics.renderStartedAt;
+        console.info("[수납 대시보드 브라우저 성능]", metrics);
+        setTimeout(function() {
+          google.script.run.withFailureHandler(function() {}).logDashboardClientPerformance(metrics);
+        }, 0);
+      }
+
+
+      function bindTableEvents() {
+      // =====================================================================
+      // 🚀 [핵심 개선] 이벤트 위임 (Event Delegation) 
+      // 무거운 클릭 이벤트를 셀마다 달지 않고, 테이블 몸통(tbody) 하나에서 중앙 통제
+      // =====================================================================
+      document.getElementById("tableBody").addEventListener("click", function(e) {
+          // 클릭된 요소나 그 부모 중에 data-action 속성이 있는 것을 찾아냄
+          var target = e.target.closest("[data-action]");
+          if (!target) return;
+          
+          var action = target.getAttribute("data-action");
+          var studentId = target.getAttribute("data-studentid");
+          
+          // 1. 메모 팝업 열기
+          if (action === "memoPopup") {
+              var memo = target.getAttribute("data-memo");
+              openMemoPopup(memo);
+              return;
+          }
+          
+          // 2. 전역 데이터(rawList)에서 해당 학생의 전체 정보를 즉시 메모리 검색
+          var student = rawList.find(function(s) { return String(s.id).replace(/[\r\n']+/g, "") === studentId; });
+          if (!student) return;
+
+          // 3. 학생 상세 정보 열기
+          if (action === "studentInfo") {
+              var data = {
+                  studentId: student.id,
+                  name: student.name, grade: student.grade, teacher: student.teacher,
+                  fee: student.fee ? Number(student.fee).toLocaleString() : "-", 
+                  baseDay: student.baseDay, firstDate: student.firstDateFull, courseMode: student.courseMode,
+                  exitDateFull: student.exitDateFull, relName: student.relName, status: student.status
+              };
+              showStudentInfo(data);
+          } 
+          // 4. 수납 모달 열기 (P 버튼)
+          else if (action === "payment") {
+              if (!dashboardAccess.canCreatePayment) return;
+              openPaymentModal(studentId, student.name, student.fee || 0, student.baseDay || 1, student.familyId || "", student.relName || "");
+          }
+          // 5. 결제 기록 수정 모달 (다중 선택창) 열기
+          else if (action === "multiSelect") {
+              if (!dashboardAccess.canEditPayments) return;
+              var period = target.getAttribute("data-period"); // "curr", "prev", "next"
+              var payList = student[period];
+              
+              var warnMsg = "";
+              if (period === "curr" && student.validation && student.validation.level > 0) {
+                  var v = student.validation;
+                  warnMsg = (v.level === 2 ? "[주의] " : "[확인] ") + (v.msg || "금액 차이") + "\n------------------\n규정: " + Number(v.expected).toLocaleString() + "\n납부: " + Number(v.real).toLocaleString() + "\n차액: " + Number(v.diff).toLocaleString();
+              }
+              openMultiSelectModal(payList, warnMsg);
+          }
+      });
+      }
+
+</script>

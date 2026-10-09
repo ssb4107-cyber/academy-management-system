@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; background-color: #f1f3f4; }
+      
+      /* 컨트롤 패널 */
+      .control-panel { 
+        background: white; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+        display: flex; gap: 10px; align-items: center; margin-bottom: 20px;
+      }
+      .btn-print { background: #1a73e8; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+      .btn-print:disabled { background:#9aa0a6; cursor:not-allowed; opacity:.75; }
+      .btn-load { background: #5f6368; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+      .load-status { font-size:12px; color:#5f6368; font-weight:bold; min-width:110px; text-align:right; }
+      .btn-close { background: #f1f3f4; color: #333 !important; border: 1px solid #ccc; padding: 8px 16px; border-radius: 4px; font-weight: bold; text-decoration: none; display: inline-block; text-align: center; box-sizing: border-box; margin-left: 8px; }
+      .btn-close:hover { background: #e8eaed; }
+
+      /* 인쇄 영역 (화면용) */
+      .print-area { 
+        background: white; 
+        padding: 40px; 
+        border-radius: 8px; 
+        min-height: 500px; 
+      }
+      
+      /* 메인 타이틀 (연/월) */
+      .main-title {
+        text-align: center;
+        font-size: 36px;
+        font-weight: 900;
+        margin: 0 0 20px 0; 
+        color: #000;
+        border-bottom: 4px solid #000;
+        padding-bottom: 15px;
+        letter-spacing: -1px;
+      }
+
+      /* ★ [수정] 출력 일시 박스: 세로 배치 및 가운데 정렬 */
+      .print-date-box {
+        display: flex;
+        flex-direction: column; /* ★ 핵심: 좌우 나란히 배치를 상하 배치로 강제 변경 */
+        justify-content: center; 
+        align-items: center;
+        gap: 3px; /* ★ 박스와 아래 텍스트 사이의 간격 */
+        margin-bottom: 40px; 
+      }
+      
+      .date-badge {
+        background-color: #fff;
+        border: 3px solid #000; 
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-size: 16px; 
+        font-weight: 900; 
+        color: #000;
+        box-shadow: 2px 2px 0px rgba(0,0,0,0.2); 
+      }
+
+      /* ★ [추가] 부연 설명 텍스트 스타일 */
+      .date-notice {
+        display: block;
+        margin-top: 12px; /* 박스와의 여백 */
+        font-size: 15px; /* 크기 확대 (기존 12px -> 15px, 약 2.2포인트 확대) */
+        color: #666;
+        font-weight: bold;
+        text-align: center; /* 가운데 정렬 */
+        line-height: 1.4;
+      }
+
+      /* 선생님 이름 섹션 */
+      h2 { 
+        margin: 30px 0 15px 0; 
+        color: #1a73e8; 
+        font-size: 22px; 
+        border-left: 7px solid #1a73e8; 
+        padding-left: 15px; 
+      }
+      
+      /* 테이블 스타일 */
+      table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 13px; table-layout: fixed; }
+      
+      th, td { border: 1px solid #555; padding: 8px 4px; text-align: center; vertical-align: middle; }
+      th { background-color: #f1f3f4; font-weight: bold; height: 35px; color:#000; font-size: 14px; border-bottom: 2px solid #000; }
+      td { height: 32px; color: #333; } 
+
+
+      /* 납부 완료 텍스트 */
+      .paid-text { color: #1a73e8; font-weight: bold; font-size: 13px; }
+
+      /* ★ 인쇄 전용 설정 */
+      @media print {
+        @page { margin: 10mm; size: A4; } 
+        body { background: white; padding: 0; padding-top: 20px !important; }
+        .control-panel { display: none !important; } 
+        .loading-state { display:none !important; }
+        .print-area { padding: 0; box-shadow: none; width: 100%; }
+        
+        .teacher-section { page-break-inside: avoid; page-break-after: always; margin-top: 20px; }
+        .teacher-section:last-child { page-break-after: auto; }
+        
+        table { page-break-inside: auto; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        
+        .date-badge { border: 3px solid #000 !important; font-weight: 900 !important; }
+      }
+    </style>
+  </head>
+  <body>
+
+    <div class="control-panel">
+      <label><b>기준 월:</b></label>
+      <input type="month" id="targetMonth" style="padding:5px; font-size:14px;">
+      <button class="btn-load" onclick="loadData()">🔄 조회</button>
+      
+      <span style="margin-left: 15px; font-size: 13px; color: #d93025; font-weight: bold;">
+        💡 화면에는 이어져 보여도, 인쇄 시에는 원장님별로 각각 다른 페이지에 출력됩니다.
+      </span>
+      
+      <div style="flex:1;"></div>
+      <span style="font-size:11px; color:#5f6368;">※ 인쇄 창에서 단면 인쇄를 확인하세요.</span>
+      <span id="loadStatus" class="load-status">조회 준비</span>
+      <button id="printButton" class="btn-print" onclick="printChecklist()" disabled>⏳ 불러오는 중</button>
+      <a href="<?= ScriptApp.getService().getUrl() ?>" target="_top" class="btn-close" onclick="return smartClose(event);">✖ 닫기</a>
+    </div>
+
+    <div id="printContent" class="print-area">
+      <div class="loading-state" style="text-align:center; color:#999; padding:50px;">
+        상단에서 월을 선택하고 [조회]를 눌러주세요.
+      </div>
+    </div>
+
+    <script>
+      var checklistLoading = false;
+      var checklistReady = false;
+      var latestChecklistRequest = 0;
+
+      window.onload = function() {
+        var today = new Date();
+        var yyyy = today.getFullYear();
+        var mm = ("0" + (today.getMonth() + 1)).slice(-2);
+        document.getElementById("targetMonth").value = yyyy + "-" + mm;
+        loadData(); 
+      };
+
+      function loadData() {
+        var ym = document.getElementById("targetMonth").value;
+        if (!ym) { alert("월을 선택해주세요."); return; }
+
+        var requestId = ++latestChecklistRequest;
+        setChecklistReady(false, "데이터 조회 중");
+
+        document.getElementById("printContent").innerHTML = '<div class="loading-state" style="text-align:center; padding:50px;">⏳ 데이터를 불러오는 중...</div>';
+
+        google.script.run
+          .withSuccessHandler(function(data) {
+            if (requestId !== latestChecklistRequest) return;
+            renderChecklist(data || {});
+            finishChecklistRender(requestId);
+          })
+          .withFailureHandler(function(err){
+            if (requestId !== latestChecklistRequest) return;
+            setChecklistReady(false, "조회 실패");
+            document.getElementById("printContent").innerHTML = '<div class="loading-state" style="text-align:center; padding:50px; color:#d93025;">자료를 불러오지 못했습니다.<br>월을 다시 선택하거나 새로고침해주세요.</div>';
+            var message = err && err.message ? err.message : String(err || "조회 중 알 수 없는 문제가 발생했습니다.");
+            alert(message + "\n조회 월을 확인한 뒤 다시 시도해주세요. 계속되면 화면을 새로고침해주세요.");
+          })
+          .getPaymentChecklistData(ym);
+      }
+
+      function setChecklistReady(ready, statusText) {
+        checklistReady = !!ready;
+        checklistLoading = !ready && statusText === "데이터 조회 중";
+        var button = document.getElementById("printButton");
+        button.disabled = !ready;
+        button.textContent = ready ? "🖨️ 인쇄하기" : (checklistLoading ? "⏳ 불러오는 중" : "🖨️ 인쇄 대기");
+        document.getElementById("loadStatus").textContent = statusText || (ready ? "인쇄 준비 완료" : "인쇄 대기");
+      }
+
+      function finishChecklistRender(requestId) {
+        var markReadyAfterPaint = function() {
+          requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+              if (requestId !== latestChecklistRequest) return;
+              setChecklistReady(true, "인쇄 준비 완료");
+            });
+          });
+        };
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(markReadyAfterPaint, markReadyAfterPaint);
+        else markReadyAfterPaint();
+      }
+
+      function printChecklist() {
+        if (checklistLoading || !checklistReady) {
+          document.getElementById("loadStatus").textContent = "로딩 완료 후 인쇄 가능";
+          return;
+        }
+        document.getElementById("loadStatus").textContent = "인쇄 창에서 단면 확인";
+        window.print();
+      }
+
+      function renderChecklist(groupedData) {
+        var container = document.getElementById("printContent");
+        var escapeHtml = function(value) { return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]; }); };
+        container.innerHTML = "";
+
+        var teachers = Object.keys(groupedData).sort();
+        var ym = document.getElementById("targetMonth").value;
+        
+        var splitYm = ym.split("-");
+        var titleText = splitYm[0] + "년 " + splitYm[1] + "월 수납 명단";
+
+        // 현재 시간 구하기
+        var now = new Date();
+        var printTimeStr = now.getFullYear() + "-" +
+                           ("0" + (now.getMonth() + 1)).slice(-2) + "-" +
+                           ("0" + now.getDate()).slice(-2) + " " +
+                           ("0" + now.getHours()).slice(-2) + ":" +
+                           ("0" + now.getMinutes()).slice(-2);
+
+        if (teachers.length === 0) {
+          container.innerHTML = '<div style="text-align:center; padding:50px;">해당 월에 납부 대상 학생이 없습니다.</div>';
+          return;
+        }
+
+        teachers.forEach(function(teacher) {
+          var list = groupedData[teacher];
+          
+          list.sort(function(a, b) {
+            if (a.grade === b.grade) return a.name < b.name ? -1 : 1;
+            return a.grade < b.grade ? -1 : 1;
+          });
+
+          var section = document.createElement("div");
+          section.className = "teacher-section";
+
+          // 1. 메인 타이틀
+          var mainTitle = document.createElement("div");
+          mainTitle.className = "main-title";
+          mainTitle.innerText = titleText;
+          section.appendChild(mainTitle);
+
+         // 2. ★ [수정] 출력 일시 박스 (내용 및 위치 변경)
+          var dateBox = document.createElement("div");
+          dateBox.className = "print-date-box";
+          dateBox.innerHTML = 
+            '<span class="date-badge">📅 반영 시점: ' + printTimeStr + '</span>' +
+            '<div class="date-notice">※ 위 시점까지의 정상 처리된 내역은 인쇄물로서 출력됩니다.</div>'; /* 내용 변경 및 div 사용 */
+          section.appendChild(dateBox);
+
+          // 3. 선생님 담당 표시
+          var subTitle = document.createElement("h2");
+          subTitle.innerHTML = "📌 담당: " + escapeHtml(teacher) + " 원장님 <span style='font-size:16px; font-weight:normal; color:#555;'>(" + list.length + "명)</span>";
+          section.appendChild(subTitle);
+
+          var table = document.createElement("table");
+          
+          var thead = `
+            <thead>
+              <tr>
+                <th style="width:11%">학년/학번</th>
+                <th style="width:11%">이름</th>
+                <th style="width:11%">수강료</th>
+                <th style="width:11%">납부일</th>
+                <th style="width:12%">납부금액</th>
+                <th style="width:11%">납부방식</th>
+                <th style="width:12%">서명</th>
+                <th style="width:21%">비고</th>
+              </tr>
+            </thead>`;
+          
+          var tbodyHtml = "<tbody>";
+          list.forEach(function(s) {
+            var rowClass = s.isVacation ? "vacation-row" : "";
+            var noteHtml = s.isVacation ? '<span class="vacation-text">' + escapeHtml(s.note) + '</span>' : escapeHtml(s.note || "");
+            
+            var paidDate = s.paidDate || "";
+            var paidAmt = s.paidAmount || "";
+            var payMethod = s.method || s.payMethod || ""; // ★ [추가] 백엔드에서 넘어오는 결제 수단 데이터
+            
+            var paidClass = paidDate ? "paid-text" : "";
+
+            tbodyHtml += '<tr class="' + rowClass + '">';
+            tbodyHtml += '<td>' + escapeHtml(s.grade) + '</td>';
+            tbodyHtml += '<td style="font-weight:bold;"><button type="button" class="student-info-link" data-student-modal-id="' + escapeHtml(s.studentId) + '">' + escapeHtml(s.name) + '</button></td>';
+            tbodyHtml += '<td style="text-align:center;">' + escapeHtml(s.fee) + '</td>';
+            tbodyHtml += '<td class="' + paidClass + '">' + escapeHtml(paidDate) + '</td>';
+            tbodyHtml += '<td class="' + paidClass + '">' + escapeHtml(paidAmt) + '</td>';
+            
+            // ★ [추가] 납부 방식 셀 추가
+            tbodyHtml += '<td class="' + paidClass + '">' + escapeHtml(payMethod) + '</td>'; 
+            
+            // 서명란 (빈칸)
+            tbodyHtml += '<td></td>'; 
+            
+            tbodyHtml += '<td>' + noteHtml + '</td>';
+            tbodyHtml += '</tr>';
+          });
+          tbodyHtml += "</tbody>";
+
+          table.innerHTML = thead + tbodyHtml;
+          section.appendChild(table);
+          
+          container.appendChild(section);
+        });
+      }
+
+      // --- [마법의 닫기/뒤로가기 함수] ---
+      function smartClose(event) {
+        try {
+          // 1. 단독 웹페이지로 열렸을 때 -> a 태그의 href로 자연스럽게 메인 이동
+          if (window.top === window.self) return true; 
+          
+          // 2. 구글 시트 내부의 팝업(모달) 창으로 열렸을 때 -> 이동 취소하고 창 닫기
+          if (document.referrer.indexOf("docs.google.com") !== -1) {
+            event.preventDefault();     
+            google.script.host.close(); 
+            return false;
+          }
+          return true;
+        } catch(e) {
+          event.preventDefault();
+          google.script.host.close();
+          return false;
+        }
+      }
+    </script>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+  <?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

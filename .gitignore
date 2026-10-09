@@ -1,0 +1,37 @@
+# Local Google Apps Script connection
+.clasp.json
+.clasprc.json
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+*secret*.json
+
+# Generated or local-only folders
+node_modules/
+coverage/
+.agents/
+.codex/
+trade-calculater/
+.git-onedrive-placeholder-*/
+
+# Supabase local state (schema source files remain trackable)
+supabase/.branches/
+supabase/.temp/
+
+# Operational exports and local reports
+/*.md
+!/README.md
+!/SECURITY.md
+!/HYBRID_ARCHITECTURE.md
+*.log
+*.csv
+*.tsv
+*.xlsx
+*.zip
+*.bak
+

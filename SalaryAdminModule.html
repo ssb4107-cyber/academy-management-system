@@ -1,0 +1,146 @@
+<script>
+      function salaryAdminLoad() {
+        salaryAdminInitialized = true;
+        salaryAdminRecordsLoaded = false;
+        document.getElementById("smHistoryList").innerHTML = "정산 기록을 불러오는 중...";
+        google.script.run.withSuccessHandler(function(data) {
+          salaryAdminRecords = data && data.records || [];
+          salaryAdminRecordsLoaded = true;
+          salaryAdminPopulateSettlementSelect();
+          salaryAdminRender();
+          var select = document.getElementById("smHistoryTeacher");
+          select.innerHTML = (data && data.teachers || []).map(function(item) {
+            return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.name) + (item.active ? "" : " (비활성)") + '</option>';
+          }).join("");
+        }).withFailureHandler(function(error) {
+          salaryAdminInitialized = false;
+          salaryAdminRecordsLoaded = false;
+          document.getElementById("smHistoryList").textContent = salaryActionableError(error, "급여 관리 자료 조회");
+        }).getSalaryAdminInitialData();
+      }
+
+      function salaryAdminPopulateSettlementSelect() {
+        var active = salaryAdminRecords.filter(function(item) { return item.status !== "취소"; });
+        document.getElementById("smSettlement").innerHTML = active.map(function(item) {
+          return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(salaryYmLabel(item.ym) + " · " + item.teacherName) + " · " + Number(item.finalAmount || 0).toLocaleString() + "원 (" + escapeHtml(item.status) + ')</option>';
+        }).join("");
+      }
+
+      function salaryAdminFilteredRecords() {
+        var ym = document.getElementById("smFilterMonth").value;
+        var text = String(document.getElementById("smFilterText").value || "").trim().toLowerCase();
+        var status = document.getElementById("smFilterStatus").value;
+        return salaryAdminRecords.filter(function(item) {
+          if (ym && item.ym !== ym) return false;
+          if (text && String(item.teacherName || "").toLowerCase().indexOf(text) < 0) return false;
+          if (status === "지급완료" && item.status !== "지급완료") return false;
+          if (status === "미지급" && (item.status === "지급완료" || item.status === "취소")) return false;
+          if (status === "취소" && item.status !== "취소") return false;
+          return true;
+        });
+      }
+
+      function salaryAdminRender() {
+        var list = salaryAdminFilteredRecords();
+        document.getElementById("smCountAll").textContent = list.length + "건";
+        document.getElementById("smCountPaid").textContent = list.filter(function(item) { return item.status === "지급완료"; }).length + "건";
+        var balance = list.filter(function(item) { return item.status !== "취소"; }).reduce(function(sum, item) { return sum + Number(item.balanceAmount || 0); }, 0);
+        var total = list.filter(function(item) { return item.status !== "취소"; }).reduce(function(sum, item) { return sum + Number(item.finalAmount || 0); }, 0);
+        document.getElementById("smBalanceTotal").textContent = balance.toLocaleString() + "원";
+        document.getElementById("smFinalTotal").textContent = total.toLocaleString() + "원";
+        var box = document.getElementById("smHistoryList");
+        if (!list.length) { box.innerHTML = '<div style="padding:28px;color:#777">조건에 맞는 급여 기록이 없습니다.</div>'; return; }
+        var rows = list.map(function(item) {
+          var statusClass = item.status === "지급완료" ? " paid" : (item.status === "취소" ? " cancelled" : "");
+          var encodedId = encodeURIComponent(item.id || "");
+          var cancel = item.status !== "취소" && Number(item.paidAmount || 0) === 0 ? '<button class="admin-secondary" onclick="salaryAdminCancel(\'' + encodedId + '\')">확정 취소</button>' : "";
+          return '<tr><td>' + escapeHtml(salaryYmLabel(item.ym)) + '</td><td><strong>' + escapeHtml(item.teacherName) + '</strong></td><td>' + escapeHtml(item.sourceType) + '</td><td class="money">' + Number(item.finalAmount || 0).toLocaleString() + '</td><td class="money">' + Number(item.paidAmount || 0).toLocaleString() + '</td><td class="money">' + Number(item.balanceAmount || 0).toLocaleString() + '</td><td><span class="admin-status' + statusClass + '">' + escapeHtml(item.status) + '</span></td><td>' + escapeHtml(item.memo || "-") + '</td><td><button class="admin-secondary" onclick="salaryAdminLedger(\'' + encodedId + '\')">내역</button> ' + cancel + '</td></tr>';
+        }).join("");
+        box.innerHTML = '<div class="admin-table-wrap"><table><thead><tr><th>월</th><th>원장</th><th>구분</th><th>확정액</th><th>지급액</th><th>잔액</th><th>상태</th><th>메모</th><th>관리</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      }
+
+      function salaryAdminSavePayment() {
+        var button = document.getElementById("smSavePaymentBtn");
+        if (!smSettlement.value) { alert("처리할 정산 기록을 선택해주세요."); return; }
+        button.disabled = true;
+        google.script.run.withSuccessHandler(function(result) {
+          button.disabled = false; smAmount.value = ""; smMemo.value = ""; salaryAdminInitialized = false; salaryAdminLoad(); fetchAllData();
+          alert("처리되었습니다. 상태: " + result.status + " / 잔액: " + Number(result.balanceAmount || 0).toLocaleString() + "원");
+        }).withFailureHandler(function(error) { button.disabled = false; alert(salaryActionableError(error, "급여 지급·보정")); }).recordSalarySettlementAdjustment({ settlementId:smSettlement.value, adjustmentType:smAction.value, amount:smAmount.value, entryDate:smDate.value, memo:smMemo.value });
+      }
+
+      function salaryAdminPayMonth() {
+        var button = document.getElementById("smBatchPaymentBtn");
+        var ym = document.getElementById("smBatchPaymentYm").value;
+        var entryDate = document.getElementById("smBatchPaymentDate").value;
+        if (!salaryAdminRecordsLoaded) { alert("정산 기록을 모두 불러온 뒤 다시 시도해주세요."); return; }
+        if (!/^\d{4}-\d{2}$/.test(ym)) { alert("일괄 지급 대상 월을 선택해주세요."); return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) { alert("일괄 지급일을 선택해주세요."); return; }
+        var targets = salaryAdminRecords.filter(function(item) {
+          return item.ym === ym && item.status !== "취소" && Number(item.balanceAmount || 0) > 0;
+        });
+        if (!targets.length) { alert("해당 월에 지급할 미지급 잔액이 없습니다."); return; }
+        var total = targets.reduce(function(sum, item) { return sum + Number(item.balanceAmount || 0); }, 0);
+        var names = targets.map(function(item) { return item.teacherName; }).join(", ");
+        if (!confirm(
+          salaryYmLabel(ym) + "월 확정 급여 잔액 " + total.toLocaleString() + "원을 일괄 지급 처리하시겠습니까?\n\n" +
+          "대상: " + targets.length + "명 (" + names + ")\n" +
+          "지급일: " + entryDate + "\n\n" +
+          "한 원장이라도 처리에 실패하면 전체가 저장되지 않습니다."
+        )) return;
+        button.disabled = true;
+        button.textContent = "월 지급 처리 중...";
+        var requestId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : "SALPAYBATCH-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+        google.script.run.withSuccessHandler(function(result) {
+          button.disabled = false;
+          button.textContent = "해당 월 잔액 전체 지급";
+          document.getElementById("smBatchPaymentMemo").value = "";
+          salaryAdminInitialized = false;
+          salaryAdminLoad();
+          fetchAllData();
+          alert(salaryYmLabel(result.ym) + "월 급여 " + Number(result.count || 0) + "명 지급 완료\n총 지급액: " + Number(result.totalPaid || 0).toLocaleString() + "원");
+        }).withFailureHandler(function(error) {
+          button.disabled = false;
+          button.textContent = "해당 월 잔액 전체 지급";
+          alert(salaryActionableError(error, "월 급여 일괄 지급"));
+        }).recordSalaryMonthPayments({
+          ym: ym,
+          entryDate: entryDate,
+          memo: document.getElementById("smBatchPaymentMemo").value,
+          expectedCount: targets.length,
+          expectedTotalPaid: total,
+          requestId: requestId
+        });
+      }
+
+      function salaryAdminSaveHistory() {
+        var button = document.getElementById("smSaveHistoryBtn"); button.disabled = true;
+        google.script.run.withSuccessHandler(function(result) {
+          button.disabled = false; smHistoryFinal.value = ""; smHistoryPaid.value = 0; smHistoryMemo.value = ""; salaryAdminInitialized = false; salaryAdminLoad(); fetchAllData();
+          alert("과거 급여를 기록했습니다. 상태: " + result.status);
+        }).withFailureHandler(function(error) { button.disabled = false; alert(salaryActionableError(error, "과거 급여 기록")); }).createHistoricalSalaryRecord({ ym:smHistoryYm.value, teacherId:smHistoryTeacher.value, finalAmount:smHistoryFinal.value, paidAmount:smHistoryPaid.value, paidDate:smHistoryPaidDate.value, memo:smHistoryMemo.value });
+      }
+
+      function salaryAdminCancel(encodedId) {
+        var reason = prompt("확정 취소 사유를 입력하세요. 지급 기록이 있으면 취소할 수 없습니다.");
+        if (!reason) return;
+        google.script.run.withSuccessHandler(function() { salaryAdminInitialized = false; salaryAdminLoad(); fetchAllData(); }).withFailureHandler(function(error) { alert(salaryActionableError(error, "급여 확정 취소")); }).cancelSalarySettlement(decodeURIComponent(encodedId), reason);
+      }
+
+      function salaryAdminLedger(encodedId) {
+        google.script.run.withSuccessHandler(function(result) {
+          var lines = [salaryYmLabel(result.ym) + " · " + result.teacherName, "확정 " + Number(result.finalAmount || 0).toLocaleString() + "원 / 지급 " + Number(result.paidAmount || 0).toLocaleString() + "원 / 잔액 " + Number(result.balanceAmount || 0).toLocaleString() + "원", "학생 " + result.calculationCount + "명"];
+          if (!result.transactions.length) lines.push("추가 조정·지급 내역 없음");
+          result.transactions.forEach(function(item) { lines.push(item.entryDate + " [" + item.type + "] " + Number(item.amount || 0).toLocaleString() + "원 " + (item.memo || "")); });
+          alert(lines.join("\n"));
+        }).withFailureHandler(function(error) { alert(salaryActionableError(error, "급여 원장 조회")); }).getSalarySettlementLedger(decodeURIComponent(encodedId));
+      }
+
+      function salaryAdminRunCheck() {
+        google.script.run.withSuccessHandler(function(result) {
+          var lines = ["정산 " + result.settlements + "건 / 내역 " + result.entries + "건", "발견 항목: " + result.issues.length + "건"];
+          result.issues.forEach(function(item) { lines.push("[" + item.severity + "] " + item.message); }); alert(lines.join("\n"));
+        }).withFailureHandler(function(error) { alert(salaryActionableError(error, "급여 데이터 점검")); }).runSalaryDataDiagnostics();
+      }
+
+</script>

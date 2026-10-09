@@ -1,0 +1,206 @@
+<script>
+  window.CommonStudentPicker = (function() {
+    var requestSequence = 0;
+    function nextRequest() { requestSequence += 1; return requestSequence; }
+    function isCurrent(sequence) { return sequence === requestSequence; }
+    function invalidate() { requestSequence += 1; }
+    function createRequestGate() {
+      var sequence = 0;
+      return {
+        next: function() { sequence += 1; return sequence; },
+        isCurrent: function(value) { return value === sequence; },
+        invalidate: function() { sequence += 1; }
+      };
+    }
+    function getChosung(str) {
+      if (!str) return "";
+      var splitConsonants = {
+        'ㄳ':'ㄱㅅ','ㄵ':'ㄴㅈ','ㄶ':'ㄴㅎ','ㄺ':'ㄹㄱ','ㄻ':'ㄹㅁ','ㄼ':'ㄹㅂ',
+        'ㄽ':'ㄹㅅ','ㄾ':'ㄹㅌ','ㄿ':'ㄹㅍ','ㅀ':'ㄹㅎ','ㅄ':'ㅂㅅ'
+      };
+      var cho = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+      var normalized = String(str).split("").map(function(ch) { return splitConsonants[ch] || ch; }).join("");
+      return normalized.split("").map(function(ch) {
+        var code = ch.charCodeAt(0) - 44032;
+        return code >= 0 && code < 11172 ? cho[Math.floor(code / 588)] : ch;
+      }).join("");
+    }
+    function engToKor(value) {
+      if (!value) return "";
+      var f = ['r','R','s','e','E','f','a','q','Q','t','T','d','w','W','c','z','x','v','g'];
+      var fJamo = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+      var m = ['k','o','i','O','j','p','u','P','h','hk','ho','hl','y','n','nj','np','nl','b','m','ml','l'];
+      var mJamo = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ'];
+      var l = ['','r','R','rt','s','sw','sg','e','f','fr','fa','fq','ft','fx','fv','fg','a','q','qt','t','T','d','w','c','z','x','v','g'];
+      var keys = 'rRsseEfaqQtTdwwWczxvgkoiOjpPuPhhkhohlynnjnplbmml';
+      var text = String(value), result = '', i = 0;
+      while (i < text.length) {
+        var ch = text[i];
+        if (keys.indexOf(ch) === -1) { result += ch; i++; continue; }
+        var cho = f.indexOf(ch), jung = -1, jong = 0, cursor = i + (cho >= 0 ? 1 : 0);
+        var doubleJung = text[cursor] + (text[cursor + 1] || '');
+        if (m.indexOf(doubleJung) >= 0) { jung = m.indexOf(doubleJung); cursor += 2; }
+        else if (m.indexOf(text[cursor]) >= 0) { jung = m.indexOf(text[cursor]); cursor++; }
+        if (cho >= 0 && jung >= 0) {
+          var doubleJong = text[cursor] + (text[cursor + 1] || '');
+          if (l.indexOf(doubleJong) > 0 && m.indexOf(text[cursor + 2] || '') < 0) { jong = l.indexOf(doubleJong); cursor += 2; }
+          else if (l.indexOf(text[cursor]) > 0 && m.indexOf(text[cursor + 1] || '') < 0) { jong = l.indexOf(text[cursor]); cursor++; }
+          result += String.fromCharCode(44032 + cho * 588 + jung * 28 + jong); i = cursor;
+        } else {
+          // 영문 자판으로 초성만 입력한 경우도 일반적인 초성 검색으로 연결합니다.
+          // 예: rt -> ㄱㅅ, r -> ㄱ. 모음 단독 입력도 대응 자모로 보존합니다.
+          if (cho >= 0) result += fJamo[cho];
+          else {
+            var singleJung = m.indexOf(ch);
+            result += singleJung >= 0 ? mJamo[singleJung] : ch;
+          }
+          i++;
+        }
+      }
+      return result;
+    }
+    function clearFields(ids) {
+      (ids || []).forEach(function(id) {
+        var element = document.getElementById(id);
+        if (!element) return;
+        if (element.type === "checkbox") element.checked = false;
+        else element.value = "";
+      });
+      invalidate();
+    }
+    function normalizeQuery(value) {
+      return engToKor(String(value || "").replace(/\s+/g, ""));
+    }
+    function splitCompatibilityConsonants(value) {
+      var splitConsonants = {
+        'ㄳ':'ㄱㅅ','ㄵ':'ㄴㅈ','ㄶ':'ㄴㅎ','ㄺ':'ㄹㄱ','ㄻ':'ㄹㅁ','ㄼ':'ㄹㅂ',
+        'ㄽ':'ㄹㅅ','ㄾ':'ㄹㅌ','ㄿ':'ㄹㅍ','ㅀ':'ㄹㅎ','ㅄ':'ㅂㅅ'
+      };
+      return String(value || "").split("").map(function(ch) { return splitConsonants[ch] || ch; }).join("");
+    }
+    function decomposeHangul(value) {
+      var initials = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+      var vowels = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
+      var finals = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+      var result = String(value || "").split("").map(function(ch) {
+        var code = ch.charCodeAt(0) - 44032;
+        if (code < 0 || code >= 11172) return ch;
+        var initialIndex = Math.floor(code / 588);
+        var vowelIndex = Math.floor((code % 588) / 28);
+        var finalIndex = code % 28;
+        return initials[initialIndex] + vowels[vowelIndex] + finals[finalIndex];
+      }).join("");
+      return splitCompatibilityConsonants(result);
+    }
+    function isInitialOnlyQuery(value) {
+      var normalized = splitCompatibilityConsonants(value);
+      return normalized.length > 0 && /^[ㄱ-ㅎ]+$/.test(normalized);
+    }
+    function matchesMixedHangul(candidate, query) {
+      var valueChars = String(candidate || "").split("");
+      var queryChars = splitCompatibilityConsonants(query).split("");
+      if (!queryChars.some(function(ch) { return /^[ㄱ-ㅎ]$/.test(ch); })) return false;
+      for (var start = 0; start <= valueChars.length - queryChars.length; start++) {
+        var matched = true;
+        for (var i = 0; i < queryChars.length; i++) {
+          var queryChar = queryChars[i];
+          var valueChar = valueChars[start + i];
+          if (/^[ㄱ-ㅎ]$/.test(queryChar)) {
+            if (getChosung(valueChar) !== queryChar) { matched = false; break; }
+          } else if (String(valueChar).toLowerCase() !== String(queryChar).toLowerCase()) {
+            matched = false;
+            break;
+          }
+        }
+        if (matched) return true;
+      }
+      return false;
+    }
+    function matches(candidate, query) {
+      var rawQuery = String(query || "").replace(/\s+/g, "");
+      var normalized = normalizeQuery(query);
+      if (!normalized) return true;
+      var value = String(candidate == null ? "" : candidate).replace(/\s+/g, "");
+      // 영문 이름·학년 등 실제 영문 데이터도 한글 자판 변환 전에 그대로 검색합니다.
+      if (rawQuery && value.toLowerCase().indexOf(rawQuery.toLowerCase()) !== -1) return true;
+      if (value.toLowerCase().indexOf(normalized.toLowerCase()) !== -1) return true;
+      // 입력 중 종성이 다음 글자의 초성으로 합쳐진 경우도 찾습니다. 예: 정옛 -> 정예서.
+      if (decomposeHangul(value).indexOf(decomposeHangul(normalized)) !== -1) return true;
+      if (isInitialOnlyQuery(normalized)) {
+        return getChosung(value).indexOf(splitCompatibilityConsonants(normalized)) !== -1;
+      }
+      return matchesMixedHangul(value, normalized);
+    }
+    function filterStudents(students, query, options) {
+      var normalized = normalizeQuery(query);
+      var fields = options && options.fields ? options.fields : ["name"];
+      if (!normalized) return (students || []).slice();
+      return (students || []).filter(function(student) {
+        return fields.some(function(field) {
+          return matches(student && student[field] != null ? student[field] : "", query);
+        });
+      });
+    }
+    function resetSelection(options) {
+      options = options || {};
+      var select = document.getElementById(options.selectId || "");
+      if (select) {
+        select.value = "";
+        if (!select.value) select.selectedIndex = 0;
+      }
+      (options.valueIds || []).forEach(function(id) {
+        var element = document.getElementById(id);
+        if (element) element.value = "";
+      });
+      (options.htmlIds || []).forEach(function(id) {
+        var element = document.getElementById(id);
+        if (element) element.textContent = "";
+      });
+      (options.hideIds || []).forEach(function(id) {
+        var element = document.getElementById(id);
+        if (element) element.style.display = "none";
+      });
+      if (options.gate && typeof options.gate.invalidate === "function") options.gate.invalidate();
+    }
+    function label(student) {
+      return [student.name, student.grade, student.teacher].filter(Boolean).join(" / ");
+    }
+    function autoSelectSingle(selectId, students, callback) {
+      if (!Array.isArray(students) || students.length !== 1) return false;
+      var select = document.getElementById(selectId);
+      if (!select) return false;
+      select.value = String(students[0].id);
+      if (typeof callback === "function") callback(students[0]);
+      else select.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+    return { nextRequest: nextRequest, isCurrent: isCurrent, invalidate: invalidate,
+      createRequestGate: createRequestGate, normalizeQuery: normalizeQuery,
+      filterStudents: filterStudents, matches: matches, isInitialOnlyQuery: isInitialOnlyQuery,
+      resetSelection: resetSelection,
+      getChosung: getChosung, engToKor: engToKor, decomposeHangul: decomposeHangul,
+      clearFields: clearFields, label: label,
+      autoSelectSingle: autoSelectSingle };
+  })();
+  // 기존 화면 함수명과 호환하면서 실제 실행은 공통 구현을 사용합니다.
+  window.getChosung = window.CommonStudentPicker.getChosung;
+  window.engToKor = window.CommonStudentPicker.engToKor;
+
+  window.CommonUiFailure = {
+    message: function(context, error) {
+      var message = error && error.message ? error.message : String(error || "알 수 없는 오류");
+      if (!message || message === "[object Object]") message = context + " 중 알 수 없는 문제가 발생했습니다.";
+      return message + "\n입력 내용을 확인한 뒤 다시 시도해주세요. 계속되면 화면을 새로고침해주세요. 최고 원장은 ‘설정 및 운영 관리 → 오류 자력 해결 안내’에 이 문구를 붙여넣어 다음 행동을 확인할 수 있습니다.";
+    },
+    report: function(context, error, recover) {
+      if (typeof recover === "function") {
+        try { recover(); } catch (ignoredRecoveryError) {}
+      }
+      var message = this.message(context, error);
+      google.script.run
+        .withSuccessHandler(function(diagnosticId) { alert(message + "\n오류 ID: " + diagnosticId); })
+        .withFailureHandler(function() { alert(message); })
+        .reportClientFailure(context, message);
+    }
+  };
+</script>

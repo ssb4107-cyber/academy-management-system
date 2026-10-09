@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; background-color: #f8f9fa; }
+      h2 { margin-top: 0; color: #1a73e8; font-size: 18px; text-align: center; }
+
+      label { display: block; font-size: 12px; font-weight: bold; color: #555; margin-bottom: 4px; margin-top: 10px; }
+      input, select { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+      
+      #searchInput { background-color: #e8f0fe; border-color: #1a73e8; font-weight: bold; }
+      button, .btn-close { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px; }
+      .btn-save { background: #1a73e8; color: white; }
+      .btn-close { background: #f1f3f4; color: #333 !important; margin-top: 10px; display: block; text-decoration: none; text-align: center; box-sizing: border-box; }
+
+      #historyList { 
+        margin-top: 10px; border: 1px solid #ddd; border-radius: 6px; 
+        max-height: 250px; overflow-y: auto; background: white; min-height: 50px;
+      }
+      .history-item { 
+        padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 13px; 
+        display: flex; justify-content: space-between; align-items: center;
+        transition: background 0.2s;
+      }
+      .history-item:hover { background-color: #e8f0fe; }
+      .history-item:last-child { border-bottom: none; }
+      
+      .history-info { display: flex; flex-direction: column; gap: 2px; }
+      .history-month { font-weight: bold; color: #333; font-size: 14px; }
+      .history-date { color: #666; font-size: 11px; }
+      .history-amount { color: #1a73e8; font-weight: bold; font-size: 15px; }
+
+      .edit-box { display: none; background: white; padding: 15px; border: 2px solid #1a73e8; border-radius: 8px; margin-top: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+      .edit-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
+      
+      .help-text { font-size: 11px; color: #888; font-weight: normal; margin-left: 5px; }
+
+      .checkbox-container { display: flex; align-items: center; margin-top: 5px; margin-bottom: 10px; }
+      .checkbox-container input { width: auto; margin-right: 5px; cursor: pointer; }
+      .checkbox-container label { margin: 0; cursor: pointer; font-weight: normal; color: #333; }
+
+      /* 일할 계산 섹션 스타일 */
+      .calc-toggle-area {
+        margin-top: 15px;
+        padding-top: 10px;
+        border-top: 1px dashed #ddd;
+        display: flex; align-items: center; gap: 5px;
+      }
+      .calc-section { 
+        display: none; 
+        margin-top: 10px; 
+        padding: 10px; 
+        background-color: #f1f3f4; 
+        border-radius: 6px; 
+        border: 1px solid #ddd;
+      }
+      .calc-header { 
+        font-size: 12px; 
+        font-weight: bold; 
+        color: #555; 
+        margin-bottom: 8px; 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+      }
+      .calc-inputs { 
+        display: flex; 
+        gap: 10px; 
+        align-items: center; 
+      }
+      .calc-inputs input[type="date"] { flex: 1; }
+      .calc-btn { 
+        width: auto; 
+        padding: 8px 12px; 
+        margin-top: 0; 
+        background-color: #5f6368; 
+        color: white; 
+        font-size: 12px; 
+      }
+      .calc-result { 
+        margin-top: 8px; 
+        font-size: 13px; 
+        color: #1a73e8; 
+        font-weight: bold; 
+        text-align: right; 
+      }
+    </style>
+  </head>
+  <body>
+    <h2>💰 수납 내역 수정</h2>
+
+    <label>학생 검색 (이름 입력 후 Enter)</label>
+    <input type="text" id="searchInput" placeholder="이름을 입력하세요..." onkeyup="handleSearchInput(event)">
+    
+    <div class="checkbox-container">
+      <input type="checkbox" id="chkRetired" onchange="reloadList()">
+      <label for="chkRetired">퇴원생 포함하여 검색</label>
+    </div>
+
+    <label>학생 선택</label>
+    <select id="studentList" onchange="loadHistory()">
+      <option value="" disabled selected>불러오는 중...</option>
+    </select>
+    <button type="button" class="student-info-link" style="margin:7px 0 2px" onclick="StudentInfoModal.open(document.getElementById('studentList').value)">선택 학생 정보 보기</button>
+    <input type="hidden" id="selectedName">
+    <input type="hidden" id="studentFee" value="0">
+
+    <label>📋 최근 납부 기록 (항목 클릭 시 수정)</label>
+    <div id="historyList">
+      <div style="padding:15px; text-align:center; color:#999;">학생을 선택하면 기록이 나타납니다.</div>
+    </div>
+
+    <div id="editArea" class="edit-box">
+      <div class="edit-header">
+        <span style="font-weight:bold; color:#1a73e8;">✏️ 내용 수정</span>
+        <button onclick="closeEditBox()" style="width:auto; margin:0; padding:5px 10px; background:#eee; font-size:12px; color:#333;">취소</button>
+      </div>
+      
+      <input type="hidden" id="p_payId">
+      
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1;">
+          <label>실제 납부일</label>
+          <input type="date" id="p_date">
+        </div>
+        <div style="flex:1;">
+          <label>납부월 <span class="help-text">(귀속월)</span></label>
+          <input type="month" id="p_month" onchange="updateCalcDatesFromMonth()">
+        </div>
+      </div>
+
+      <label>금액 (원)</label>
+      <input type="number" id="p_amount">
+
+      <div class="calc-toggle-area">
+        <input type="checkbox" id="chkCalcToggle" onchange="toggleCalcSection()" style="width:auto; margin:0; cursor:pointer;">
+        <label for="chkCalcToggle" style="margin:0; cursor:pointer;">📅 일할 계산기 사용</label>
+      </div>
+
+      <div id="calcSection" class="calc-section">
+        <div class="calc-header">
+          <span>기간 설정</span>
+          <button type="button" class="calc-btn" onclick="calculateProrated()">계산 적용</button>
+        </div>
+        <div class="calc-inputs">
+          <input type="date" id="calc_start" placeholder="시작일">
+          <span>~</span>
+          <input type="date" id="calc_end" placeholder="종료일">
+        </div>
+        <div id="calc_result_text" class="calc-result"></div>
+      </div>
+
+      <label>결제 방식</label>
+      <select id="p_method">
+        <?!= getPaymentMethodOptionsHtml_() ?>
+      </select>
+
+      <label>메모</label>
+      <input type="text" id="p_memo">
+
+      <button class="btn-save" onclick="saveData()">수정 완료</button>
+    </div>
+    
+    <a href="<?= ScriptApp.getService().getUrl() ?>" target="_top" class="btn-close" onclick="return smartClose(event);">✖ 닫기</a>
+
+    <script>
+      function escapeHtml(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]; });
+      }
+      var allStudents = [];
+      var paymentListRequestGate = null;
+      var paymentHistoryRequestGate = null;
+
+      function ensurePaymentRequestGates() {
+        if (!paymentListRequestGate) paymentListRequestGate = CommonStudentPicker.createRequestGate();
+        if (!paymentHistoryRequestGate) paymentHistoryRequestGate = CommonStudentPicker.createRequestGate();
+      }
+
+      function clearStudentSelection() {
+        ensurePaymentRequestGates();
+        CommonStudentPicker.resetSelection({
+          selectId: "studentList", valueIds: ["selectedName", "studentFee"],
+          htmlIds: ["historyList"], gate: paymentHistoryRequestGate
+        });
+        closeEditBox();
+      }
+
+      window.onload = function() {
+        reloadList();
+      };
+
+      function reloadList() {
+        ensurePaymentRequestGates();
+        clearStudentSelection();
+        var includeRetired = document.getElementById("chkRetired").checked;
+        var select = document.getElementById("studentList");
+        select.innerHTML = '<option>데이터 불러오는 중...</option>';
+        select.disabled = true;
+        
+        var requestVersion = paymentListRequestGate.next();
+        google.script.run.withSuccessHandler(function(list) {
+          if (!paymentListRequestGate.isCurrent(requestVersion)) return;
+          initList(list);
+        }).withFailureHandler(function(error) {
+          if (!paymentListRequestGate.isCurrent(requestVersion)) return;
+          select.innerHTML = '<option>학생 목록을 불러오지 못했습니다. 새로고침해주세요.</option>';
+          select.disabled = false;
+          alert(CommonUiFailure.message("수납 수정 학생 목록 조회", error));
+        }).getStudentListForEdit(includeRetired);
+      }
+
+      function initList(list) {
+        var select = document.getElementById("studentList");
+        select.disabled = false;
+        allStudents = list || [];
+        allStudents.sort(function(a, b) { return a.name < b.name ? -1 : 1; });
+        renderOptions(allStudents);
+      }
+
+      function renderOptions(list) {
+        var select = document.getElementById("studentList");
+        var defaultText = list.length > 0 ? "학생 선택 (검색 결과: " + list.length + "명)" : "검색 결과 없음";
+        select.innerHTML = '<option value="" disabled selected>' + defaultText + '</option>';
+        
+        list.forEach(function(s) {
+          var option = document.createElement("option");
+          option.value = s.id;
+          
+          var info = s.nameLabel ? s.nameLabel : s.name;
+          if (s.grade) info += " (" + s.grade + ")";
+          
+          option.text = info;
+          option.setAttribute("data-name", s.name);
+          var safeFee = (s.fee && s.fee > 0) ? s.fee : 0;
+          option.setAttribute("data-fee", safeFee);
+
+          if (info.indexOf("(퇴원)") !== -1) {
+            option.style.color = "#aaaaaa"; 
+            option.style.backgroundColor = "#f9f9f9"; 
+          }
+
+          select.appendChild(option);
+        });
+      }
+
+      // =====================================================================
+      // 🚀 [업그레이드된 검색 함수] 초성 + 한영타 변환 엔진 적용
+      // =====================================================================
+      function handleSearchInput(e) {
+        clearStudentSelection();
+        var input = document.getElementById("searchInput").value;
+        var filtered = CommonStudentPicker.filterStudents(allStudents, input, { fields: ["name"] });
+
+        // 3. 화면에 검색 결과 다시 그리기
+        renderOptions(filtered);
+        CommonStudentPicker.autoSelectSingle("studentList", filtered);
+
+        // 4. Enter 키 누르면 첫 번째 결과 자동 선택 및 내역 불러오기 (기존 기능 유지)
+        if (e.keyCode === 13 && document.getElementById("studentList").options.length > 1) {
+             var select = document.getElementById("studentList");
+             select.selectedIndex = 1; 
+             loadHistory(); 
+             document.getElementById("searchInput").blur();
+        }
+      }
+
+      function loadHistory() {
+        var select = document.getElementById("studentList");
+        if (select.selectedIndex === 0) return;
+        
+        var studentId = select.value;
+        var selectedOption = select.options[select.selectedIndex];
+        var studentName = selectedOption.getAttribute("data-name");
+        var studentFee = selectedOption.getAttribute("data-fee");
+        ensurePaymentRequestGates();
+        var requestVersion = paymentHistoryRequestGate.next();
+
+        document.getElementById("selectedName").value = studentName;
+        document.getElementById("studentFee").value = studentFee;
+
+        closeEditBox();
+        var container = document.getElementById("historyList");
+        container.innerHTML = '<div style="padding:15px; text-align:center; font-weight:bold; color:#1a73e8;">데이터 조회 중...</div>';
+
+        google.script.run
+          .withSuccessHandler(function(data) {
+            if (!paymentHistoryRequestGate.isCurrent(requestVersion) || document.getElementById("studentList").value !== studentId) return;
+            renderHistory(data);
+          })
+          .withFailureHandler(function(e){
+            if (!paymentHistoryRequestGate.isCurrent(requestVersion)) return;
+            var message = e && e.message ? e.message : String(e || "수납 기록을 불러오지 못했습니다.");
+            alert(message + "\n학생을 다시 선택하거나 화면을 새로고침해주세요.");
+          })
+          .getPaymentHistoryForEdit(studentId);
+      }
+
+      function renderHistory(rawResponse) {
+        var history = [];
+        try {
+          history = JSON.parse(rawResponse);
+        } catch(e) {
+          console.error("데이터 변환 실패", e);
+          history = rawResponse || [];
+        }
+
+        var container = document.getElementById("historyList");
+        container.innerHTML = "";
+
+        if (!history || history.length === 0) {
+          container.innerHTML = '<div style="padding:20px; text-align:center; color:#c5221f; font-weight:bold;">납부 기록이 없습니다.</div>';
+          return;
+        }
+
+        history.forEach(function(item) {
+          var div = document.createElement("div");
+          div.className = "history-item";
+          
+          var safeAmount = String(item.amount).replace(/,/g, ""); 
+          var numAmount = Number(safeAmount);
+          var displayAmount = isNaN(numAmount) ? item.amount : numAmount.toLocaleString();
+          var displayDate = item.date ? item.date.substring(0, 10) : "(날짜 없음)";
+
+          var displayMonth = item.month;
+          if (displayMonth && displayMonth.length >= 7) {
+             displayMonth = displayMonth.substring(0, 7); 
+          }
+
+          div.innerHTML = `
+            <div class="history-info">
+              <span class="history-month">${escapeHtml(displayMonth)} (${escapeHtml(item.method)})</span>
+              <span class="history-date">${escapeHtml(displayDate)} 납부</span>
+            </div>
+            <div class="history-amount">${escapeHtml(displayAmount)}원</div>
+          `;
+          
+          div.onclick = function() {
+            item.cleanMonth = displayMonth;
+            openEditBox(item);
+          };
+          container.appendChild(div);
+        });
+      }
+
+      function openEditBox(item) {
+        var box = document.getElementById("editArea");
+        box.dataset.calcType = item.calcType || "STANDARD";
+        box.dataset.calcStart = item.calcStart || "";
+        box.dataset.calcEnd = item.calcEnd || "";
+        box.dataset.activeDays = item.activeDays || "";
+        box.dataset.billingDays = item.billingDays || "";
+        box.dataset.siblingDiscount = item.siblingDiscount || "0";
+        box.dataset.otherDiscount = item.otherDiscount || "0";
+        box.style.display = "block";
+        setTimeout(function() { box.scrollIntoView({behavior: "smooth", block: "center"}); }, 100);
+        
+        // ★ [수정됨] 행 번호 대신 수납ID(payId)를 사용
+        document.getElementById("p_payId").value = item.payId || "";
+        
+        document.getElementById("p_date").value = item.date ? item.date.substring(0, 10) : "";
+        document.getElementById("p_month").value = item.cleanMonth;
+        document.getElementById("p_amount").value = item.amount;
+        document.getElementById("p_method").value = item.method;
+        document.getElementById("p_memo").value = item.memo;
+
+        // --- 일할 계산기 초기화 ---
+        document.getElementById("chkCalcToggle").checked = false;
+        toggleCalcSection();
+
+        var memo = item.memo || "";
+        var dateRegex = /(\d{4}-\d{2}-\d{2})~(\d{4}-\d{2}-\d{2})/; 
+        var match = memo.match(dateRegex);
+
+        if (match) {
+          document.getElementById("calc_start").value = match[1];
+          document.getElementById("calc_end").value = match[2];
+          document.getElementById("chkCalcToggle").checked = true; 
+          toggleCalcSection();
+        } else {
+          updateCalcDatesFromMonth();
+        }
+        
+        document.getElementById("calc_result_text").innerText = "";
+      }
+
+      function updateCalcDatesFromMonth() {
+        var monthVal = document.getElementById("p_month").value;
+        if (!monthVal) return;
+
+        var y = parseInt(monthVal.split("-")[0]);
+        var m = parseInt(monthVal.split("-")[1]);
+
+        var startDate = new Date(y, m - 1, 1);
+        var endDate = new Date(y, m, 0);
+
+        function fmt(d) { 
+          return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); 
+        }
+
+        document.getElementById("calc_start").value = fmt(startDate);
+        document.getElementById("calc_end").value = fmt(endDate);
+      }
+
+      function toggleCalcSection() {
+        var isChecked = document.getElementById("chkCalcToggle").checked;
+        document.getElementById("calcSection").style.display = isChecked ? "block" : "none";
+      }
+
+      function calculateProrated() {
+        var startDateStr = document.getElementById("calc_start").value;
+        var endDateStr = document.getElementById("calc_end").value;
+        var studentFee = Number(document.getElementById("studentFee").value);
+        var studentId = document.getElementById("studentList").value;
+
+        if (!startDateStr || !endDateStr) {
+          alert("시작일과 종료일을 모두 입력해주세요.");
+          return;
+        }
+
+        if (!studentFee || studentFee === 0) {
+          var inputFee = prompt("학생의 월 수강료 정보를 찾을 수 없습니다.\n수강료를 직접 입력해주세요:", "0");
+          if (inputFee === null) return; 
+          studentFee = Number(inputFee);
+          if (isNaN(studentFee) || studentFee === 0) {
+            alert("유효한 수강료가 아닙니다.");
+            return;
+          }
+        }
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            var editArea = document.getElementById("editArea");
+            editArea.dataset.calcType = "PRORATED";
+            editArea.dataset.calcStart = result.startDate;
+            editArea.dataset.calcEnd = result.endDate;
+            editArea.dataset.activeDays = result.activeDays;
+            editArea.dataset.billingDays = result.billingDays;
+            editArea.dataset.vacationApplied = result.vacationApplied ? "true" : "false";
+            document.getElementById("p_amount").value = result.amount;
+            var vacationText = Number(result.vacationDays) > 0 ? " · 휴가 " + result.vacationDays + "일 제외" : "";
+            document.getElementById("calc_result_text").innerText = result.activeDays + "일 / " +
+              result.billingDays + "일 기준" + vacationText + " (" + result.amount.toLocaleString() + "원)";
+            var newMemo = "[일할] " + result.startDate + "~" + result.endDate + " (" +
+              result.activeDays + "일/" + result.billingDays + "일 기준" +
+              (Number(result.vacationDays) > 0 ? ", 휴가 " + result.vacationDays + "일 제외" : "") + ")";
+            var memoInput = document.getElementById("p_memo");
+            var currentMemo = memoInput.value;
+            if (currentMemo.indexOf("[일할]") !== -1) {
+              if (confirm("기존 일할 계산 메모를 덮어쓰시겠습니까?")) memoInput.value = newMemo;
+            } else {
+              memoInput.value = currentMemo ? currentMemo + " " + newMemo : newMemo;
+            }
+          })
+          .withFailureHandler(function(error) {
+            alert(CommonUiFailure.message("일할 수납 계산", error));
+          })
+          .calculateProratedFee(studentFee, startDateStr, endDateStr, studentId);
+      }
+
+      function closeEditBox() { document.getElementById("editArea").style.display = "none"; }
+
+      function saveData() {
+        var editArea = document.getElementById("editArea");
+        var form = {
+          // ★ [핵심] payId를 사용하도록 변경
+          payId: document.getElementById("p_payId").value,
+          studentName: document.getElementById("selectedName").value,
+          payDate: document.getElementById("p_date").value, // 변수명 확인: payDate
+          month: document.getElementById("p_month").value,
+          amount: document.getElementById("p_amount").value,
+          method: document.getElementById("p_method").value,
+          memo: document.getElementById("p_memo").value,
+          mode: "UPDATE", // 명시적 업데이트 모드
+          calcType: editArea.dataset.calcType || "STANDARD",
+          calcStart: editArea.dataset.calcStart || "",
+          calcEnd: editArea.dataset.calcEnd || "",
+          activeDays: editArea.dataset.activeDays || "",
+          billingDays: editArea.dataset.billingDays || "",
+          vacationApplied: editArea.dataset.vacationApplied === "true",
+          siblingDiscount: editArea.dataset.siblingDiscount || "0",
+          otherDiscount: editArea.dataset.otherDiscount || "0"
+        };
+
+        if(!confirm("수정하시겠습니까?")) return;
+        
+        var btn = document.querySelector(".btn-save");
+        btn.innerText = "저장 중...";
+        btn.disabled = true;
+
+        google.script.run.withSuccessHandler(function(res){
+          alert(res);
+          // ★ [UX 개선] 저장 후 처리: 버튼 복구 -> 창 닫기 -> 목록 새로고침
+          btn.innerText = "수정 완료";
+          btn.disabled = false;
+          
+          closeEditBox(); // 수정창 닫기
+          loadHistory();  // 변경된 내역 다시 불러오기 (새로고침)
+        }).withFailureHandler(function(error) {
+          CommonUiFailure.report("수납 내역 수정", error, function() {
+            btn.innerText = "수정하기";
+            btn.disabled = false;
+          });
+        }).updatePaymentData(form);
+      }
+
+      // --- [마법의 닫기/뒤로가기 함수] ---
+      function smartClose(event) {
+        try {
+          // 1. 단독 웹페이지(모바일 등)로 열렸을 때 -> a 태그의 href로 메인 화면 자연스럽게 이동
+          if (window.top === window.self) return true; 
+          
+          // 2. 구글 시트 내부의 팝업(모달) 창으로 열렸을 때 -> 이동 취소하고 창 깔끔하게 닫기
+          if (document.referrer.indexOf("docs.google.com") !== -1) {
+            event.preventDefault();     
+            google.script.host.close(); 
+            return false;
+          }
+          return true;
+        } catch(e) {
+          event.preventDefault();
+          google.script.host.close();
+          return false;
+        }
+      }
+    </script>
+  <?!= includeHtml_('StudentPickerCommon'); ?>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+<?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

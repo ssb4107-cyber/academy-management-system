@@ -1,0 +1,767 @@
+<script>
+      function configurePaymentRouteUI_(clearEvidence) {
+        var isA = !!dashboardAccess.isSuperAdmin;
+        var title = document.getElementById("paymentModalTitle");
+        var guide = document.getElementById("paymentRouteGuide");
+        var evidence = document.getElementById("m_evidenceSection");
+        var fileInput = document.getElementById("m_evidence");
+        var submit = document.getElementById("m_paymentSubmitButton");
+        if (fileInput && fileInput.dataset.validationBound !== "1") {
+          fileInput.dataset.validationBound = "1";
+          fileInput.addEventListener("change", function() {
+            var errorMessage = validatePaymentEvidenceFiles_(Array.prototype.slice.call(fileInput.files || []));
+            if (errorMessage) {
+              fileInput.value = "";
+              alert(errorMessage);
+            }
+          });
+        }
+        if (title) title.textContent = isA ? "💳 수납 등록" : "🧾 수납 승인 요청";
+        if (guide) {
+          guide.className = "payment-route-guide" + (isA ? "" : " route-b");
+          guide.textContent = isA
+            ? "최고 원장 권한으로 수납 원장에 즉시 반영합니다."
+            : "증빙과 함께 승인 요청을 보내며, 최고 원장이 승인한 뒤 수납 원장에 반영됩니다.";
+        }
+        if (evidence) evidence.style.display = isA ? "none" : "block";
+        if (fileInput && clearEvidence !== false) fileInput.value = "";
+        if (submit) submit.textContent = isA ? "수납 저장" : "승인 요청";
+      }
+
+      // [수정됨] 수납 모달 열기 (자동 미납월 추천 기능 탑재)
+      function openPaymentModal(id, name, fee, baseDay, familyId, relName) {
+        pendingPaymentRequestId = createClientRequestId();
+        configurePaymentRouteUI_();
+        document.getElementById("m_studentId").value = id;
+        document.getElementById("m_studentInfo").value = name;
+        document.getElementById("m_studentFee").value = fee;
+        document.getElementById("m_baseDay").value = baseDay;
+        document.getElementById("m_familyId").value = familyId;
+        document.getElementById("m_relName").value = relName; 
+        var payDateInput = document.getElementById("m_payDate");
+        if (lastSelectedPayDate) {
+          payDateInput.value = lastSelectedPayDate;
+        } else {
+          payDateInput.valueAsDate = new Date();
+        }
+        document.getElementById("m_payMethod").value = lastSelectedMethod;
+        
+        // 아이템 리스트 초기화
+        document.getElementById("m_itemList").innerHTML = "";
+        
+        // 형제 알림창 초기화
+        var alertBox = document.getElementById("m_siblingAlert");
+        alertBox.innerHTML = "";
+        alertBox.style.display = "none";
+        var familyBox = document.getElementById("m_familyPayBox");
+        var familyList = document.getElementById("m_familyPayList");
+        var familyEnabled = document.getElementById("m_familyPayEnabled");
+        var familyHint = document.getElementById("m_familyPayHint");
+        familyBox.style.display = "none";
+        familyList.innerHTML = "";
+        familyEnabled.checked = false;
+        familyEnabled.disabled = false;
+        familyHint.innerText = "";
+        currentFamilyTargets = [];
+
+        if (familyId) {
+          var allFamilyMembers = rawList.filter(function(s) {
+              return String(s.familyId) === String(familyId);
+          });
+          var eligibleMembers = allFamilyMembers.filter(function(s) { return s.paymentEligible !== false; });
+          var eligibleSiblings = eligibleMembers.filter(function(s) { return String(s.id) !== String(id); });
+          if (allFamilyMembers.length > 1) {
+              alertBox.style.display = "block";
+              var familyLabel = relName && relName !== "-" ? relName : "그룹명 없음";
+              var msg = "👨‍👩‍👦 <b>형제(" + escapeHtml(familyLabel) + "):</b> ";
+              allFamilyMembers.filter(function(s) { return String(s.id) !== String(id); }).forEach(function(sib) {
+                 var sId = String(sib.id).replace(/[\r\n']+/g, "");
+                 var sName = String(sib.name).replace(/[\r\n']+/g, "");
+                 msg += sib.paymentEligible !== false
+                   ? '<button class="sibling-btn" onclick="switchToSibling(\'' + sId + '\')">' + escapeHtml(sName) + '</button>'
+                   : '<span style="color:#9aa0a6; margin-right:5px;">❌ ' + escapeHtml(sName) + '(퇴원)</span>';
+              });
+              alertBox.innerHTML = msg;
+
+              familyBox.style.display = "block";
+              currentFamilyTargets = eligibleMembers.map(function(member) {
+                return {
+                  id: String(member.id || "").replace(/[\r\n']+/g, ""),
+                  name: String(member.name || "").replace(/[\r\n']+/g, ""),
+                  fee: Number(member.billableFee != null ? member.billableFee : member.fee || 0),
+                  siblingDiscount: Number(member.siblingDiscount || 0),
+                  baseDay: member.baseDay || 1,
+                  courseMode: member.courseMode || "정규",
+                  specialOnly: !!member.specialOnly,
+                  vacationPeriods: Array.isArray(member.vacationPeriods) ? member.vacationPeriods.slice() : []
+                };
+              });
+              familyList.innerHTML = allFamilyMembers.map(function(member) {
+                var isCurrent = String(member.id) === String(id);
+                var eligible = member.paymentEligible !== false;
+                var attributes = isCurrent && eligible ? "checked" : "";
+                if (isCurrent || !eligible) attributes += " disabled";
+                var label = eligible ? escapeHtml(member.name) : "❌ " + escapeHtml(member.name) + " (퇴원)";
+                return '<label><input type="checkbox" class="family-target" value="' + escapeHtml(member.id) + '" ' + attributes + ' onchange="updateFamilyPaymentAvailability()"> ' + label + ' <span style="color:#5f6368;">(' + Number(member.fee || 0).toLocaleString() + ')</span></label>';
+              }).join("");
+              familyEnabled.disabled = eligibleSiblings.length === 0;
+              familyEnabled.title = familyEnabled.disabled
+                ? "함께 수납할 수 있는 재원 형제가 없습니다."
+                : "체크하면 재원 중인 형제가 모두 선택됩니다.";
+              familyHint.innerText = familyEnabled.disabled
+                ? "현재 함께 수납할 재원 형제가 없습니다."
+                : "체크하면 재원 중인 형제가 모두 선택됩니다.";
+          }
+        }
+        
+        // -----------------------------------------------------------
+        // ★ [수정됨] 미납월 자동 추천 로직 (배열 호환 & 다다음달 계산)
+        // -----------------------------------------------------------
+        var targetStudent = rawList.find(function(s) { return String(s.id) === String(id); });
+        var suggestedMonth = currentMonths.curr; // 기본값: 이번달
+
+        if (targetStudent && !targetStudent.specialOnly) {
+            // 진짜 납부 여부 확인 (True/False)
+            var paidPrev = hasPositivePayment(targetStudent.prev);
+            var paidCurr = hasPositivePayment(targetStudent.curr);
+            var paidNext = hasPositivePayment(targetStudent.next);
+
+            // 2. 입학일(firstDateYm) 체크: 입학 전인 달은 '미납'이 아님 (납부 대상 제외)
+            var joinYm = targetStudent.firstDateYm || "0000-00"; 
+            
+            // 3. 순차적으로 빈 구멍 찾기 (입학일 이후이면서 미납인 가장 빠른 달)
+            if (!paidPrev && currentMonths.prev >= joinYm) {
+                // 전달 미납 & 입학 후라면 -> 전달 추천
+                suggestedMonth = currentMonths.prev;
+            } 
+            else if (!paidCurr && currentMonths.curr >= joinYm) {
+                // 이번달 미납 -> 이번달 추천
+                suggestedMonth = currentMonths.curr;
+            } 
+            else if (!paidNext) {
+                // 다음달 미납 -> 다음달 추천
+                suggestedMonth = currentMonths.next;
+            } 
+            else {
+                // ★ [핵심] 3개월(전,현,다음) 모두 완납 상태라면? -> '다음달 + 1달' 자동 계산
+                // 예: 1, 2, 3월 납부완료 -> 4월 추천
+                var nextMonthParts = currentMonths.next.split("-").map(Number);
+                var nextDate = new Date(nextMonthParts[0], nextMonthParts[1] - 1, 1);
+                nextDate.setMonth(nextDate.getMonth() + 1); // 한 달 더하기
+                
+                var y = nextDate.getFullYear();
+                var m = nextDate.getMonth() + 1;
+                suggestedMonth = y + "-" + (m < 10 ? "0" + m : m);
+            }
+        }
+
+        // 1. 항목 추가 (기본값으로 생성됨)
+        addModalItem(getDefaultPaymentTarget(), suggestedMonth);
+        
+        // 2. 방금 추가된 항목의 날짜를 '추천된 미납월'로 강제 변경
+        if (suggestedMonth) {
+            var addedRow = document.querySelector("#m_itemList .pay-item:last-child");
+          var monthInput = addedRow.querySelector(".input-month");
+          monthInput.value = suggestedMonth;
+          autoSetDate(monthInput);
+        }
+        
+        document.getElementById("paymentModal").style.display = "flex";
+      }
+
+      function switchToSibling(targetId) {
+        var targetStudent = rawList.find(function(s) {
+           return String(s.id).replace(/[\r\n']+/g, "") === String(targetId);
+        });
+        if (targetStudent) {
+           var sId = String(targetStudent.id).replace(/[\r\n']+/g, "");
+           var sName = String(targetStudent.name).replace(/[\r\n']+/g, "");
+           var sFee = targetStudent.fee || 0;
+           var sBase = targetStudent.baseDay || 1;
+           var sFam = String(targetStudent.familyId || "").replace(/[\r\n']+/g, "");
+           var sRel = String(targetStudent.relName || "").replace(/[\r\n']+/g, "");
+           openPaymentModal(sId, sName, sFee, sBase, sFam, sRel);
+        }
+      }
+
+      function closeModal(modalId) { document.getElementById(modalId).style.display = "none"; }
+      
+      function getDefaultPaymentTarget() {
+        var currentId = document.getElementById("m_studentId").value;
+        var source = rawList.find(function(student) { return String(student.id) === String(currentId); }) || {};
+        return {
+          id: currentId,
+          name: document.getElementById("m_studentInfo").value,
+          fee: Number(source.billableFee != null ? source.billableFee : document.getElementById("m_studentFee").value || 0),
+          siblingDiscount: Number(source.siblingDiscount || 0),
+          baseDay: Number(document.getElementById("m_baseDay").value || 1),
+          courseMode: source.courseMode || "정규",
+          specialOnly: !!source.specialOnly,
+          vacationPeriods: Array.isArray(source.vacationPeriods) ? source.vacationPeriods.slice() : []
+        };
+      }
+
+      function getCheckedFamilyTargets() {
+        var checked = Array.from(document.querySelectorAll(".family-target:checked")).map(function(input) {
+          return String(input.value);
+        });
+        return currentFamilyTargets.filter(function(target) {
+          return checked.indexOf(String(target.id)) !== -1;
+        });
+      }
+
+      function findPaymentTarget(targetId) {
+        var allTargets = currentFamilyTargets.concat([getDefaultPaymentTarget()]);
+        return allTargets.find(function(target) { return String(target.id) === String(targetId); }) || getDefaultPaymentTarget();
+      }
+
+      function getItemPaymentTarget(item) {
+        var selector = item.querySelector(".input-student");
+        return findPaymentTarget(selector ? selector.value : item.getAttribute("data-student-id"));
+      }
+
+      function addModalItem(target, requestedMonth) { 
+          var container = document.getElementById("m_itemList");
+          var today = new Date();
+          var yyyy = today.getFullYear();
+          var mm = ("0" + (today.getMonth() + 1)).slice(-2);
+          var defaultMonth = requestedMonth || (yyyy + "-" + mm);
+          target = target || getDefaultPaymentTarget();
+          var defaultFee = target.specialOnly ? 0 : Number(target.billableFee != null ? target.billableFee : target.fee || 0);
+          var defaultType = target.specialOnly ? "특강비" : "수강료";
+
+          var div = document.createElement("div");
+          div.className = "pay-item";
+          div.setAttribute("data-student-id", target.id);
+          div.dataset.siblingDiscount = Number(target.siblingDiscount || 0);
+          
+          var html = '';
+          html += '<div class="pay-item-header">';
+          if (document.getElementById("m_familyPayEnabled").checked) {
+            html += '  <select class="input-student" style="flex:1.2; font-weight:bold; color:#174ea6;" onchange="handleItemStudentChange(this)">';
+            getCheckedFamilyTargets().forEach(function(optionTarget) {
+              html += '<option value="' + escapeHtml(optionTarget.id) + '"' + (String(optionTarget.id) === String(target.id) ? ' selected' : '') + '>' + escapeHtml(optionTarget.name) + '</option>';
+            });
+            html += '  </select>';
+          } else {
+            html += '  <span class="item-student-name" style="flex:1.2; font-weight:bold; color:#174ea6;">' + escapeHtml(target.name) + '</span>';
+          }
+          html += '  <input type="month" class="input-month" value="' + defaultMonth + '" style="flex:2" onchange="autoSetDate(this)">';
+          html += '  <select class="input-type" style="flex:1"><option' + (defaultType === "수강료" ? ' selected' : '') + '>수강료</option><option>교재비</option><option' + (defaultType === "특강비" ? ' selected' : '') + '>특강비</option></select>';
+          html += '  <button class="del-btn" onclick="this.closest(\'.pay-item\').remove(); calculateTotal();">✕</button>';
+          html += '</div>';
+          
+          html += '<div class="pay-item-body">';
+          html += '  <div class="pay-row">';
+          html += '    <label style="width:50px;">금액</label>';
+          html += '    <input type="number" class="input-amount" value="' + defaultFee + '" oninput="calculateTotal()" style="font-weight:bold; color:#1a73e8;">';
+          html += '  </div>';
+          html += '  <div class="calc-toggle-row">';
+          html += '    <label class="calc-option"><input type="checkbox" class="chk-calc" onchange="toggleCalc(this)"><span>📅 일할 계산</span></label>';
+          html += '    <label class="calc-option vacation disabled" title="선택한 월에 휴가가 있으면 자동 활성화됩니다."><input type="checkbox" class="chk-vacation" disabled onchange="handleVacationToggle(this)"><span class="vacation-label">🏖️ 휴가 적용</span></label>';
+          html += '  </div>';
+          html += '  <div class="calc-area" style="display:none">';
+          html += '     <div style="font-size:12px; color:#555; margin-bottom:5px;">기간 설정</div>';
+          html += '     <div class="pay-row">';
+          html += '       <input type="date" class="d-start"> ~ ';
+          html += '       <input type="date" class="d-end" onchange="updateNextBaseText(this)">';
+          html += '     </div>';
+          html += '     <div class="update-base-day">';
+          html += '        <input type="checkbox" class="chk-update" checked>';
+          html += '        <label class="lbl-update" style="cursor:pointer; margin:0;"></label>';
+          html += '        <input type="hidden" class="val-new-base">';
+          html += '     </div>';
+          html += '     <div class="calc-vacation-note" style="display:none; margin:7px 0; padding:7px 9px; border-radius:7px; background:#fff7e0; color:#76520b; font-size:11px; line-height:1.45;"></div>';
+          html += '     <button type="button" class="calc-btn">계산하기</button>';
+          html += '  </div>';
+          html += '  <input type="text" class="input-memo" placeholder="비고" style="margin-top:8px;">';
+          html += '</div>';
+
+          div.innerHTML = html;
+          container.appendChild(div);
+          
+          var calcBtn = div.querySelector(".calc-btn");
+          calcBtn.addEventListener("click", function() { runCalc(this); });
+
+          var monthInput = div.querySelector(".input-month");
+          autoSetDate(monthInput);
+          calculateTotal();
+      }
+
+      function handleItemStudentChange(select) {
+        var item = select.closest(".pay-item");
+        var target = findPaymentTarget(select.value);
+        item.setAttribute("data-student-id", target.id);
+        item.querySelector(".input-amount").value = target.specialOnly ? 0 : Number(target.billableFee != null ? target.billableFee : target.fee || 0);
+        item.querySelector(".input-type").value = target.specialOnly ? "특강비" : "수강료";
+        autoSetDate(item.querySelector(".input-month"));
+        calculateTotal();
+      }
+      
+      function autoSetDate(element) {
+        var monthVal = element.value; 
+        if (!monthVal) return;
+        var y = parseInt(monthVal.split("-")[0]);
+        var m = parseInt(monthVal.split("-")[1]);
+        var itemDiv = element.closest(".pay-item");
+        var target = getItemPaymentTarget(itemDiv);
+        var baseDay = Number(target.baseDay || 1);
+        var startDate = new Date(y, m - 1, baseDay);
+        var endDate = new Date(y, m, 0); 
+        function fmt(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+        itemDiv.querySelector(".d-start").value = fmt(startDate);
+        var endInput = itemDiv.querySelector(".d-end");
+        endInput.value = fmt(endDate);
+        updateNextBaseText(endInput);
+        syncVacationToggle(itemDiv, monthVal);
+      }
+
+      function getVacationPeriodsForMonth(target, monthValue) {
+        if (!/^\d{4}-\d{2}$/.test(String(monthValue || ""))) return [];
+        var monthStart = monthValue + "-01";
+        var parts = monthValue.split("-").map(Number);
+        var monthEndDate = new Date(parts[0], parts[1], 0);
+        var monthEnd = parts[0] + "-" + ("0" + parts[1]).slice(-2) + "-" + ("0" + monthEndDate.getDate()).slice(-2);
+        return (target.vacationPeriods || []).filter(function(period) {
+          return String(period.startDate || "") <= monthEnd && String(period.endDate || "") >= monthStart;
+        });
+      }
+
+      function syncVacationToggle(item, monthValue) {
+        var target = getItemPaymentTarget(item);
+        var periods = getVacationPeriodsForMonth(target, monthValue);
+        var checkbox = item.querySelector(".chk-vacation");
+        var option = checkbox.closest(".calc-option");
+        var label = option.querySelector(".vacation-label");
+        checkbox.disabled = periods.length === 0;
+        checkbox.checked = periods.length > 0;
+        option.classList.toggle("disabled", periods.length === 0);
+        option.title = periods.length
+          ? periods.map(function(period) { return period.startDate + "~" + period.endDate + (period.reason ? " · " + period.reason : ""); }).join(" / ")
+          : "선택한 월에 적용할 휴가가 없습니다.";
+        label.textContent = periods.length ? "🏖️ 휴가 적용 (" + periods.length + "건)" : "🏖️ 휴가 적용";
+        var note = item.querySelector(".calc-vacation-note");
+        if (periods.length) {
+          note.textContent = "해당 월 휴가가 있어 기본 적용됩니다.\n" + option.title;
+          note.style.whiteSpace = "pre-line";
+          note.style.display = "block";
+        } else {
+          note.textContent = "";
+          note.style.display = "none";
+        }
+        if (item.querySelector(".chk-calc").checked) runCalc(item.querySelector(".calc-btn"));
+      }
+
+      function handleVacationToggle(checkbox) {
+        var item = checkbox.closest(".pay-item");
+        if (item.querySelector(".chk-calc").checked) runCalc(item.querySelector(".calc-btn"));
+      }
+
+      function updateNextBaseText(element) {
+        var endStr = element.value;
+        var itemDiv = element.closest(".calc-area");
+        var hiddenInput = itemDiv ? itemDiv.querySelector(".val-new-base") : null;
+        var label = itemDiv ? itemDiv.querySelector(".lbl-update") : null;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(endStr)) {
+          if (hiddenInput) hiddenInput.value = "";
+          if (label) label.innerText = "종료일을 확인해주세요.";
+          return;
+        }
+        var parts = endStr.split("-").map(Number);
+        var endDate = new Date(parts[0], parts[1] - 1, parts[2]);
+        if (endDate.getFullYear() !== parts[0] || endDate.getMonth() !== parts[1] - 1 || endDate.getDate() !== parts[2]) {
+          if (hiddenInput) hiddenInput.value = "";
+          if (label) label.innerText = "종료일을 확인해주세요.";
+          return;
+        }
+        var nextDate = new Date(endDate);
+        nextDate.setDate(endDate.getDate() + 1);
+        var newBaseDay = nextDate.getDate();
+        var payItem = element.closest(".pay-item");
+        var currentBase = getItemPaymentTarget(payItem).baseDay || 1;
+        label.innerText = "현재 " + currentBase + "일 ➔ 다음 달 [매월 " + newBaseDay + "일]로 변경";
+        hiddenInput.value = String(newBaseDay);
+      }
+
+      function toggleCalc(element) {
+  // 1. 체크박스를 감싸고 있는 가장 가까운 항목 바디를 찾습니다.
+  var itemBody = element.closest(".pay-item-body");
+  var calcArea = itemBody.querySelector(".calc-area");
+  
+  // 2. 체크 여부에 따라 화면 표시/숨김 처리
+  calcArea.style.display = element.checked ? "block" : "none";
+  
+  if (element.checked) {
+     // [수정] 전체를 감싸는 .pay-item 부모로 확실하게 올라간 뒤 헤더의 .input-month를 탐색합니다.
+     var payItem = element.closest(".pay-item");
+     if (payItem) {
+        var monthInput = payItem.querySelector(".input-month");
+        if (monthInput && monthInput.value) {
+           // 기준 월 입력을 기반으로 시작일(1일 또는 기준일)과 종료일을 강제로 자동 세팅합니다.
+           autoSetDate(monthInput);
+        }
+     }
+  }
+}
+
+      function runCalc(btn) {
+        var calcArea = btn.closest(".calc-area");
+        var startStr = calcArea.querySelector(".d-start").value;
+        var endStr = calcArea.querySelector(".d-end").value;
+        var target = getItemPaymentTarget(btn.closest(".pay-item"));
+        var defaultFee = target.billableFee != null ? target.billableFee : (target.fee || 0);
+        var applyVacation = !!btn.closest(".pay-item").querySelector(".chk-vacation:checked");
+
+        if (!startStr || !endStr) { alert("시작일과 종료일을 모두 입력하세요."); return; }
+        google.script.run
+          .withSuccessHandler(function(result) {
+            var itemBody = btn.closest(".pay-item-body");
+            itemBody.querySelector(".input-amount").value = result.amount;
+            var itemRoot = btn.closest(".pay-item");
+            itemRoot.dataset.calcType = "PRORATED";
+            itemRoot.dataset.calcStart = result.startDate;
+            itemRoot.dataset.calcEnd = result.endDate;
+            itemRoot.dataset.activeDays = result.activeDays;
+            itemRoot.dataset.billingDays = result.billingDays;
+            itemRoot.dataset.vacationApplied = result.vacationApplied ? "true" : "false";
+            var vacationText = result.vacationApplied ? ", 휴가 " + result.vacationDays + "일 제외" : "";
+            itemBody.querySelector(".input-memo").value = "[일할] " + result.startDate + "~" + result.endDate +
+              " (" + result.activeDays + "일/" + result.billingDays + "일 기준" + vacationText + ")";
+            var vacationNote = calcArea.querySelector(".calc-vacation-note");
+            if (result.vacationApplied && Number(result.vacationDays) > 0) {
+              var periods = (result.vacationPeriods || []).map(function(period) {
+                return period.startDate + "~" + period.endDate + (period.reason ? " · " + period.reason : "");
+              });
+              vacationNote.textContent = "휴가 " + result.vacationDays + "일 제외 → 실제 " + result.activeDays + "일 적용" +
+                (periods.length ? "\n" + periods.join(" / ") : "");
+              vacationNote.style.whiteSpace = "pre-line";
+              vacationNote.style.display = "block";
+            } else {
+              vacationNote.textContent = "";
+              vacationNote.style.display = "none";
+            }
+            calcArea.querySelector(".val-new-base").value = result.nextBaseDay;
+            updateNextBaseText(calcArea.querySelector(".d-end"));
+            calculateTotal();
+          })
+          .withFailureHandler(function(error) {
+            alert(actionableErrorMessage(error, "일할 수납 계산"));
+          })
+          .calculateProratedFee(defaultFee, startStr, endStr, target.id, applyVacation);
+      }
+
+      function calculateTotal() {
+        var total = 0;
+        var totalsByStudent = {};
+        if (document.getElementById("m_familyPayEnabled").checked) {
+          getCheckedFamilyTargets().forEach(function(target) {
+            totalsByStudent[target.id] = { name: target.name, amount: 0 };
+          });
+        }
+        document.querySelectorAll("#m_itemList .pay-item").forEach(function(item) {
+          var target = getItemPaymentTarget(item);
+          var amount = Number(item.querySelector(".input-amount").value || 0);
+          total += amount;
+          if (!totalsByStudent[target.id]) totalsByStudent[target.id] = { name: target.name, amount: 0 };
+          totalsByStudent[target.id].amount += amount;
+        });
+        var breakdownEl = document.getElementById("m_totalBreakdown");
+        breakdownEl.style.display = "none";
+        breakdownEl.innerHTML = "";
+
+        if (document.getElementById("m_familyPayEnabled").checked) {
+          var lines = Object.keys(totalsByStudent).map(function(studentId) {
+            var entry = totalsByStudent[studentId];
+            return entry.name + " " + entry.amount.toLocaleString() + "원";
+          });
+          if (lines.length > 1) {
+            breakdownEl.style.display = "block";
+            breakdownEl.innerHTML = lines.join(" · ");
+          }
+        }
+        document.getElementById("m_totalAmount").innerText = total.toLocaleString();
+      }
+
+      function getSelectedPaymentTargets() {
+        var defaultTarget = getDefaultPaymentTarget();
+        if (!document.getElementById("m_familyPayEnabled").checked || currentFamilyTargets.length === 0) {
+          return [defaultTarget];
+        }
+        var selected = getCheckedFamilyTargets();
+        return selected.length > 0 ? selected : [defaultTarget];
+      }
+
+      function updateFamilyPaymentAvailability() {
+        var enabledToggle = document.getElementById("m_familyPayEnabled");
+        var selectedCount = document.querySelectorAll(".family-target:checked").length;
+        if (selectedCount >= 2) {
+          enabledToggle.checked = true;
+          enabledToggle.title = "";
+          renderPaymentItemsForTargets(getCheckedFamilyTargets());
+          return;
+        }
+        if (enabledToggle.checked) {
+          enabledToggle.checked = false;
+        }
+        resetFamilyTargetSelection();
+        enabledToggle.title = "형제를 선택하면 함께 수납이 자동으로 켜집니다.";
+        renderPaymentItemsForTargets([getDefaultPaymentTarget()]);
+      }
+
+      function handleFamilyPayToggle() {
+        var toggle = document.getElementById("m_familyPayEnabled");
+        if (toggle.checked) {
+          document.querySelectorAll(".family-target").forEach(function(input) {
+            if (!input.disabled || input.checked) input.checked = true;
+          });
+        }
+        var selected = getCheckedFamilyTargets();
+        if (toggle.checked && selected.length < 2) {
+          toggle.checked = false;
+          alert("함께 수납할 수 있는 재원 형제가 없습니다.");
+          return;
+        }
+        if (!toggle.checked) {
+          resetFamilyTargetSelection();
+          renderPaymentItemsForTargets([getDefaultPaymentTarget()]);
+          return;
+        }
+        renderPaymentItemsForTargets(selected);
+      }
+
+      function resetFamilyTargetSelection() {
+        var currentId = String(document.getElementById("m_studentId").value);
+        document.querySelectorAll(".family-target").forEach(function(input) {
+          input.checked = String(input.value) === currentId && input.disabled;
+        });
+      }
+
+      function getSuggestedMonthForTarget(target) {
+        var student = rawList.find(function(s) { return String(s.id) === String(target.id); });
+        if (!student) return currentMonths.curr;
+        var joinYm = student.firstDateYm || "0000-00";
+        if (!hasPositivePayment(student.prev) && currentMonths.prev >= joinYm) return currentMonths.prev;
+        if (!hasPositivePayment(student.curr) && currentMonths.curr >= joinYm) return currentMonths.curr;
+        if (!hasPositivePayment(student.next)) return currentMonths.next;
+        var parts = currentMonths.next.split("-").map(Number);
+        var next = new Date(parts[0], parts[1], 1);
+        return next.getFullYear() + "-" + String(next.getMonth() + 1).padStart(2, "0");
+      }
+
+      function renderPaymentItemsForTargets(targets) {
+        var container = document.getElementById("m_itemList");
+        container.innerHTML = "";
+        targets.forEach(function(target) {
+          addModalItem(target, getSuggestedMonthForTarget(target));
+        });
+        calculateTotal();
+      }
+
+      function validatePaymentEvidenceFiles_(files) {
+        files = files || [];
+        if (files.length > 3) return "증빙은 최대 3장까지 첨부할 수 있습니다.";
+        for (var i = 0; i < files.length; i++) {
+          var file = files[i];
+          if (["image/jpeg","image/png","image/webp"].indexOf(String(file.type || "").toLowerCase()) === -1) {
+            return "JPG·PNG·WebP 이미지만 첨부할 수 있습니다.";
+          }
+          if (!file.size || file.size > 2 * 1024 * 1024) return "증빙 이미지 한 장은 2MB 이하여야 합니다.";
+        }
+        return "";
+      }
+
+      function readPaymentEvidenceFile_(file) {
+        return new Promise(function(resolve, reject) {
+          var reader = new FileReader();
+          var settled = false;
+          var timer = setTimeout(function() {
+            if (settled) return;
+            settled = true;
+            try { reader.abort(); } catch (ignoredAbortError) {}
+            reject(new Error("증빙 이미지 읽기가 지연되어 중단했습니다. 파일을 다시 선택해주세요."));
+          }, 15000);
+          function finish(error, value) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            if (error) reject(error); else resolve(value);
+          }
+          reader.onload = function() {
+            var base64 = String(reader.result || "").split(",")[1] || "";
+            finish(base64 ? null : new Error("증빙 이미지 데이터를 읽지 못했습니다."),
+              { name:file.name, type:file.type, base64:base64 });
+          };
+          reader.onerror = function() { finish(new Error("증빙 이미지를 읽지 못했습니다.")); };
+          reader.onabort = function() { finish(new Error("증빙 이미지 읽기가 취소되었습니다.")); };
+          try { reader.readAsDataURL(file); }
+          catch (readError) { finish(new Error("증빙 이미지를 읽지 못했습니다.")); }
+        });
+      }
+
+      function readPaymentEvidenceFiles_() {
+        if (dashboardAccess.isSuperAdmin) return Promise.resolve([]);
+        var input = document.getElementById("m_evidence");
+        var files = Array.prototype.slice.call(input && input.files || []);
+        var validationError = validatePaymentEvidenceFiles_(files);
+        if (validationError) return Promise.reject(new Error(validationError));
+        return Promise.all(files.map(readPaymentEvidenceFile_));
+      }
+
+      function submitModalPayment() {
+        var studentId = document.getElementById("m_studentId").value;
+        var studentName = document.getElementById("m_studentInfo").value;
+        
+        var itemDivs = document.querySelectorAll(".pay-item");
+        var selectedTargets = getSelectedPaymentTargets();
+        var paymentsByStudent = {};
+        selectedTargets.forEach(function(target) {
+          paymentsByStudent[target.id] = { studentId: target.id, studentName: target.name, items: [], newBaseDay: "" };
+        });
+        itemDivs.forEach(function(div) {
+          var target = getItemPaymentTarget(div);
+          if (!paymentsByStudent[target.id]) {
+            paymentsByStudent[target.id] = { studentId: target.id, studentName: target.name, items: [], newBaseDay: "" };
+          }
+          paymentsByStudent[target.id].items.push({
+            month: div.querySelector(".input-month").value,
+            type: div.querySelector(".input-type").value,
+            amount: div.querySelector(".input-amount").value,
+            memo: div.querySelector(".input-memo").value,
+            calcType: div.dataset.calcType || "STANDARD",
+            calcStart: div.dataset.calcStart || "",
+            calcEnd: div.dataset.calcEnd || "",
+            activeDays: div.dataset.activeDays || "",
+            billingDays: div.dataset.billingDays || "",
+            vacationApplied: div.dataset.vacationApplied === "true",
+            siblingDiscount: div.dataset.siblingDiscount || "0",
+            otherDiscount: div.dataset.otherDiscount || "0"
+          });
+          if (div.querySelector(".chk-calc").checked && div.querySelector(".chk-update").checked) {
+            paymentsByStudent[target.id].newBaseDay = div.querySelector(".val-new-base").value;
+          }
+        });
+        var payments = Object.keys(paymentsByStudent).map(function(studentId) { return paymentsByStudent[studentId]; });
+        var missingTarget = payments.find(function(payment) { return payment.items.length === 0; });
+        if (missingTarget) {
+          alert(missingTarget.studentName + " 학생의 수납 항목이 없습니다. 항목을 추가하거나 함께 수납 대상에서 제외해주세요.");
+          return;
+        }
+        if (payments.length === 0) return;
+
+        var data = {
+          requestId: pendingPaymentRequestId || (pendingPaymentRequestId = createClientRequestId()),
+          studentId: studentId,
+          studentName: studentName,
+          payDate: document.getElementById("m_payDate").value,
+          payMethod: document.getElementById("m_payMethod").value,
+          items: payments[0].items,
+          payments: payments,
+          newBaseDay: payments[0].newBaseDay,
+          skipDashboardRefresh: true,
+          returnSavedRows: true
+        };
+
+        var currentMethod = document.getElementById("m_payMethod").value;
+        var currentPayDate = document.getElementById("m_payDate").value;
+        paymentAttemptFilterIds = (globalRenderList || []).map(function(student) { return String(student.id); });
+
+        var btn = document.querySelector("#paymentModal .btn-submit");
+        btn.disabled = true; 
+        btn.innerText = dashboardAccess.isSuperAdmin ? "저장 중..." : "승인 요청 중...";
+        var paymentRoundTripStartedAt = Date.now();
+        readPaymentEvidenceFiles_().then(function(attachments) {
+          data.attachments = attachments;
+          google.script.run
+            .withSuccessHandler(function(res){
+              if (res && res.performance) {
+                res.performance.roundTripMs = Date.now() - paymentRoundTripStartedAt;
+                window.lastPaymentPerformance = res.performance;
+                console.info('[수납 처리 성능]', res.performance);
+              }
+              var message = (res && res.message) ? res.message : String(res || "");
+              showToast(message, "success");
+
+               lastSelectedMethod = currentMethod;
+               lastSelectedPayDate = currentPayDate;
+               closeModal('paymentModal');
+               pendingPaymentRequestId = "";
+               freezeSearchResults(paymentAttemptFilterIds);
+               applyPaymentSaveResult(res);
+               configurePaymentRouteUI_();
+               btn.disabled = false;
+            })
+            .withFailureHandler(function(err){
+               alert(actionableErrorMessage(err, dashboardAccess.isSuperAdmin ? "수납 저장" : "수납 승인 요청"));
+               configurePaymentRouteUI_(false);
+               btn.disabled = false;
+            })
+            .processPaymentBatch(data);
+        }).catch(function(error) {
+          alert(actionableErrorMessage(error, "증빙 첨부"));
+          configurePaymentRouteUI_(false);
+          btn.disabled = false;
+        });
+      }
+
+      function refreshAffectedDashboardStudents(studentIds) {
+        var ids = Array.from(new Set((studentIds || []).map(String).filter(Boolean)));
+        if (!ids.length) { applySortAndFilter(); return; }
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (!res || !Array.isArray(res.list)) { loadData(); return; }
+            var replacements = {};
+            res.list.forEach(function(student) { replacements[String(student.id)] = student; });
+            rawList = rawList.map(function(student) {
+              return replacements[String(student.id)] || student;
+            });
+            applySortAndFilter();
+          })
+          .withFailureHandler(function() { loadData(); })
+          .getDashboardStudentsForHtml(ensureTargetMonthValue(), ids);
+      }
+
+      function applyPaymentSaveResult(res) {
+        if (!res || !Array.isArray(res.savedRows)) {
+          loadData();
+          return;
+        }
+
+        var affectedStudentIds = {};
+        (res.affectedStudentIds || []).forEach(function(studentId) {
+          if (studentId) affectedStudentIds[String(studentId)] = true;
+        });
+        if (!res.duplicate) {
+          res.savedRows.forEach(function(row) {
+            affectedStudentIds[String(row.studentId)] = true;
+            var student = rawList.find(function(item) { return String(item.id) === String(row.studentId); });
+            if (!student) return;
+            var periodKey = row.month === currentMonths.prev ? "prev"
+              : row.month === currentMonths.curr ? "curr"
+              : row.month === currentMonths.next ? "next" : "";
+            if (periodKey) {
+              if (!Array.isArray(student[periodKey])) student[periodKey] = [];
+              student[periodKey].push({
+                payId: row.payId, date: row.date, fullDate: row.fullDate, month: row.month,
+                amount: Number(row.amount || 0), method: row.method, memo: row.memo, type: row.type,
+                calcType: row.calcType || "", calcStart: row.calcStart || "", calcEnd: row.calcEnd || "",
+                activeDays: row.activeDays || "", billingDays: row.billingDays || "",
+                siblingDiscount: Number(row.siblingDiscount || 0), otherDiscount: Number(row.otherDiscount || 0)
+              });
+            }
+            student.hasPaymentInWindow = true;
+          });
+        }
+        if (res.duplicate) {
+          res.savedRows.forEach(function(row) { affectedStudentIds[String(row.studentId)] = true; });
+        }
+
+        if (res.baseDayUpdates) {
+          Object.keys(res.baseDayUpdates).forEach(function(studentId) {
+            var student = rawList.find(function(item) { return String(item.id) === String(studentId); });
+            if (student) student.baseDay = res.baseDayUpdates[studentId];
+          });
+        }
+        refreshAffectedDashboardStudents(Object.keys(affectedStudentIds));
+      }
+
+</script>

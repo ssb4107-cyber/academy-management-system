@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+
+  <meta name="viewport" content="width=1100, user-scalable=yes">
+
+  <style>
+    /* =========================================================
+       [1] 기본 스타일 (문제를 일으키던 touch-action 전부 삭제됨)
+       ========================================================= */
+    body { 
+      font-family: 'Noto Sans KR', sans-serif; 
+      margin: 0; padding: 10px; 
+      background: #f1f3f4; 
+      font-size: 13px; 
+      /* touch-action 관련 코드 모두 삭제 -> 브라우저 기본 기능(확대/축소) 정상화 */
+    }
+
+    /* 모달 필수 스타일 (화면 중앙 고정) */
+    .modal-overlay { 
+      display: none; 
+      position: fixed; 
+      top: 0; left: 0; 
+      width: 100%; height: 100%; 
+      background: rgba(0, 0, 0, 0.5); 
+      z-index: 9999; 
+      justify-content: center; 
+      align-items: center; 
+    }
+    .modal-box { 
+      background: #f8f9fa; 
+      width: 500px; 
+      max-height: 90vh; 
+      overflow-y: auto; 
+      padding: 15px; 
+      border-radius: 8px; 
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4); 
+      display: flex; flex-direction: column; 
+    }
+
+    /* 테이블 컨테이너 */
+    .table-container { 
+      background: white; 
+      border-radius: 8px; 
+      border: 1px solid #ddd;
+      overflow: auto; 
+      height: calc(100vh - 140px); 
+      /* 모바일 부드러운 스크롤 (필수) */
+      -webkit-overflow-scrolling: touch; 
+    }
+    
+    table { 
+      border-collapse: collapse; 
+      font-size: 12px; 
+      width: 100%; 
+      min-width: 1100px; /* 뷰포트 너비와 일치 */
+      table-layout: fixed; 
+    }
+    
+    thead th { 
+      background: #f8f9fa; z-index: 10; padding: 6px 2px; 
+      border-bottom: 2px solid #ddd; text-align: center; color: #444; white-space: nowrap; 
+      /* Sticky Header (상단 고정) */
+      position: sticky; 
+      top: 0;
+    }
+    
+    /* 셀 스타일 */
+    td { 
+      padding: 4px 2px; 
+      border-bottom: 1px solid #eee; 
+      text-align: center !important; 
+      vertical-align: middle; 
+      white-space: nowrap; 
+      overflow: hidden; 
+      text-overflow: clip; 
+    }
+    /* [추가] 도움말 버튼 스타일 */
+      /* [수정] 도움말 버튼 크기 확대 (1.3배) */
+      .btn-help { 
+        background: #34a853; 
+        color: white; 
+        border: none; 
+        
+        /* 기존보다 여백과 글자를 키웠습니다 */
+        padding: 10px 20px;  /* 기존 6px 12px -> 확대 */
+        font-size: 14px;     /* 기존 11px -> 확대 */
+        border-radius: 6px;  /* 모서리 둥글기 조정 */
+        
+        cursor: pointer; 
+        font-weight: bold; 
+        white-space: nowrap; 
+        margin-left: 15px;   
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* 그림자도 약간 더 진하게 */
+        transition: transform 0.1s; /* 누르는 효과 추가 */
+      }
+      .btn-help:hover { 
+        background: #2c8e46; 
+        transform: scale(1.05); /* 마우스 올리면 살짝 커짐 */
+      }
+      .btn-help:active {
+        transform: scale(0.95); /* 클릭하면 살짝 눌림 */
+      }
+
+      /* [추가] 도움말 팝업창 (대시보드 위에 뜸) */
+      #helpOverlay {
+        display: none;
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5); z-index: 99999; /* 제일 위에 */
+        justify-content: center; align-items: center;
+      }
+      .help-box {
+        background: white; width: 800px; height: 80%; 
+        border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      }
+      .help-header {
+        padding: 15px; background: #34a853; color: white; font-weight: bold; font-size: 16px;
+        display: flex; justify-content: space-between; align-items: center;
+      }
+      .help-content { flex: 1; overflow-y: auto; padding: 0; }
+      /* 아이프레임(내용) 꽉 채우기 */
+      #helpFrame { width: 100%; height: 100%; border: none; }
+
+    /* [기존 디자인 유지] */
+    .retired-row { background-color: #f8f9fa; color: #888; }
+    .retired-tag { font-size: 10px; background: #eee; padding: 1px 3px; border-radius: 3px; margin-left: 2px; color: #666; }
+    .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block; }
+    .bg-red { background: #fce8e6; color: #c5221f; }
+    .unpaid-streak-prefix { font-size: 9px; font-weight: 800; color: #8f514c; letter-spacing: -0.3px; }
+    .bg-green { background: #e6f4ea; color: #137333; }
+    .bg-new-yellow { background: #fff9c4; color: #f9a825; border: 1px solid #fff59d; }
+    .pending-payment-status { margin-left:3px; background:rgba(103,80,164,.12); color:#5b3d93; border:1px dashed rgba(103,80,164,.45); }
+    .pending-payment-cell { background:rgba(103,80,164,.10) !important; color:#5b3d93; border-top:1px dashed rgba(103,80,164,.42); border-bottom:1px dashed rgba(103,80,164,.42); }
+    .pending-payment-chip { display:inline-flex; align-items:center; gap:5px; max-width:96%; padding:3px 8px; border-radius:12px; background:rgba(255,255,255,.66); border:1px dashed rgba(103,80,164,.55); color:#5b3d93; font-size:10px; font-weight:bold; }
+    .pending-payment-chip strong { color:#43277b; }
+    .pending-payment-inline { display:block; margin-top:2px; color:#5b3d93; font-size:9px; font-weight:bold; line-height:1.2; }
+    .badge-clean-date { background: white; color: #5f6368; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; border: 1px solid #ddd; display: inline-block; }
+    .money { font-family: 'Noto Sans KR', sans-serif; font-weight: bold; color: #333; letter-spacing: -0.5px; font-size: 11px; }
+    .clickable-name { cursor: pointer; color: #333; font-weight: bold; text-decoration: none; }
+    .month-group-header { border-left: 2px solid #dfe1e5; font-weight: bold; }
+    .curr-month-bg { background-color: #e8f0fe !important; }
+
+    /* 컨트롤 패널 */
+    .control-panel { background: white; padding: 10px; border-radius: 8px; border: 1px solid #ddd; display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+    .input-group { display: flex; flex-direction: column; }
+    label { font-size: 11px; color: #5f6368; font-weight: bold; margin-bottom: 2px; }
+    input, select { padding: 5px; border: 1px solid #dadce0; border-radius: 4px; font-size: 12px; }
+    .btn-search { background: #1a73e8; color: white; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; height: 30px; align-self: flex-end; font-size: 12px; }
+    .btn-main-close { background: #f1f3f4; color: #333 !important; border: 1px solid #ccc; padding: 0 15px; border-radius: 4px; font-weight: bold; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; height: 30px; align-self: flex-end; font-size: 12px; margin-left: 10px; box-sizing: border-box; }
+    .btn-main-close:hover { background: #e8eaed; }
+    .toast-container { position:fixed; top:18px; right:18px; z-index:10000; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+    .toast-message { min-width:260px; max-width:420px; background:#1f2937; color:white; border-radius:8px; padding:12px 38px 12px 14px; box-shadow:0 6px 20px rgba(0,0,0,.22); font-size:13px; line-height:1.45; white-space:pre-line; position:relative; pointer-events:auto; animation:toastIn .18s ease-out; }
+    .toast-message.success { background:#137333; }
+    .toast-message .toast-close { position:absolute; right:10px; top:8px; border:0; background:transparent; color:white; cursor:pointer; font-size:16px; }
+    .search-pinned-label { display:none; margin-left:5px; color:#174ea6; background:#e8f0fe; border:1px solid #aecbfa; border-radius:10px; padding:2px 7px; font-size:10px; font-weight:bold; white-space:nowrap; }
+    .filter-state { position:relative; align-self:flex-end; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; padding:0; border:1px solid #dadce0; border-radius:50%; background:#f8f9fa; color:#5f6368; cursor:default; }
+    .filter-state svg { width:16px; height:16px; fill:currentColor; pointer-events:none; }
+    .filter-state.active { background:#fef7e0; border-color:#f9ab00; color:#b06000; cursor:pointer; box-shadow:0 1px 2px rgba(60,64,67,.18); }
+    .filter-state.active::after { content:'×'; position:absolute; right:-4px; top:-5px; display:flex; align-items:center; justify-content:center; width:14px; height:14px; border:2px solid #fff; border-radius:50%; background:#d93025; color:#fff; font-size:11px; line-height:1; font-weight:bold; }
+    .filter-state.active:hover { background:#fce8b2; }
+    .student-info-head { display:flex; align-items:center; justify-content:center; gap:8px; }
+    .btn-quick-student-add { border:1px solid #1a73e8; background:#fff; color:#1a73e8; border-radius:5px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap; }
+    .btn-quick-student-add:hover { background:#e8f0fe; }
+    .btn-approval-queue { display:none; align-self:flex-end; align-items:center; justify-content:center; gap:6px; min-width:76px; height:30px; border:1px solid #f9ab00; background:#fef7e0; color:#8a4b00; border-radius:5px; padding:0 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap; }
+    .btn-approval-queue.has-items { background:#f9ab00; color:#202124; box-shadow:0 1px 3px rgba(60,64,67,.22); }
+    .approval-queue-count { display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#fff; color:#9a5600; font-size:11px; line-height:1; }
+    .btn-approval-queue.has-items .approval-queue-count { background:#202124; color:#fff; }
+    .approval-queue-count[hidden] { display:none; }
+    .approval-modal-box { width:760px; max-width:94vw; max-height:88vh; }
+    .approval-toolbar { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0 12px; }
+    .approval-filter { border:0; border-radius:8px; padding:6px 10px; margin-right:5px; background:#f1f3f4; color:#5f6368; font-weight:bold; cursor:pointer; }
+    .approval-filter.active { background:#1a73e8; color:#fff; }
+    .approval-list { display:flex; flex-direction:column; gap:10px; overflow:auto; }
+    .approval-card { background:#fff; border:1px solid #dadce0; border-radius:8px; padding:12px; }
+    .approval-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .approval-card-title { font-size:15px; font-weight:bold; color:#202124; }
+    .approval-card-meta { margin-top:4px; color:#5f6368; font-size:11px; }
+    .approval-card-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:11px; }
+    .approval-field { background:#f8f9fa; border-radius:6px; padding:7px 8px; min-width:0; }
+    .approval-field small { display:block; color:#5f6368; margin-bottom:3px; }
+    .approval-field b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .approval-note { margin-top:9px; padding:8px; border-left:3px solid #1a73e8; background:#f8fbff; white-space:pre-wrap; word-break:break-word; }
+    .approval-warning { margin-top:9px; padding:8px; border-radius:5px; background:#fce8e6; color:#a50e0e; font-weight:bold; }
+    .approval-actions { display:flex; justify-content:flex-end; gap:7px; margin-top:11px; }
+    .approval-actions button { border-radius:5px; padding:7px 13px; cursor:pointer; font-weight:bold; }
+    .btn-evidence { border:1px solid #1a73e8; background:#fff; color:#1a73e8; }
+    .btn-approve { border:1px solid #188038; background:#188038; color:#fff; }
+    .btn-reject { border:1px solid #d93025; background:#fff; color:#d93025; }
+    .approval-empty { padding:45px 12px; text-align:center; color:#5f6368; background:#fff; border:1px dashed #dadce0; border-radius:8px; }
+    .evidence-modal-box { width:min(1100px,96vw) !important; height:94vh; max-width:96vw; max-height:94vh !important; overflow:hidden; background:#202124; }
+    .evidence-toolbar { display:none; align-items:center; justify-content:center; gap:7px; margin-bottom:8px; }
+    .evidence-toolbar button { min-width:42px; padding:6px 10px; border:1px solid #777; border-radius:6px; background:#35363a; color:#fff; cursor:pointer; font-weight:bold; }
+    .evidence-toolbar button:hover { background:#4a4b50; }
+    #approvalEvidenceZoomLabel { min-width:72px; color:#fff; text-align:center; font-size:12px; font-weight:bold; }
+    .evidence-image-viewport { flex:1 1 auto; min-height:0; overflow:auto; border-radius:5px; background:#111; text-align:center; }
+    #approvalEvidenceImage { display:inline-block; max-width:100%; max-height:100%; margin:auto; object-fit:contain; vertical-align:top; cursor:zoom-in; }
+    .student-add-modal-box { width:390px; height:min(720px,92vh); max-width:95vw; padding:0; overflow:hidden; background:#fff; }
+    .student-add-modal-header { flex:0 0 auto; margin:0; padding:11px 13px; border-bottom:1px solid #e0e0e0; background:#f8f9fa; }
+    #studentAddFrame { width:100%; flex:1 1 auto; min-height:0; border:0; background:#fff; }
+    @keyframes toastIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+
+    /* 모달 내부 스타일 */
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .modal-title { font-size: 16px; font-weight: bold; color: #1a73e8; }
+    #infoModal .info-table { table-layout: fixed; width: 100% !important; min-width: 0 !important; border-collapse: collapse; margin-top: 5px; background: white; border-radius: 4px; overflow: hidden; }
+    #infoModal .info-table th { background: #e8f0fe; color: #333; padding: 8px 5px; text-align: center; width: 80px !important; font-size: 12px; border-bottom: 1px solid #eee; font-weight: bold; }
+    #infoModal .info-table td { padding: 8px 10px; color: #333 !important; border-bottom: 1px solid #eee; white-space: normal; word-break: break-all; overflow: hidden; font-weight: 500; font-size: 12px; }
+    #editModal { z-index:10020; }
+    .student-history-section { margin-top:12px; padding-top:12px; border-top:1px solid #dadce0; min-height:150px; }
+    .student-history-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; color:#174ea6; font-weight:bold; }
+    .student-history-actions { display:flex; align-items:center; gap:6px; }
+    .student-history-header button { border:1px solid #aecbfa; background:#e8f0fe; color:#174ea6; border-radius:5px; padding:4px 8px; cursor:pointer; font-size:11px; font-weight:bold; }
+    .btn-open-history { width:100%; margin-top:12px; border:1px solid #1a73e8; background:#e8f0fe; color:#174ea6; border-radius:6px; padding:9px 12px; cursor:pointer; font-size:12px; font-weight:bold; }
+    .btn-open-history:hover { background:#d2e3fc; }
+    .student-history-wrap { max-height:300px; overflow:auto; border:1px solid #e0e0e0; border-radius:6px; background:#fff; }
+    #infoModal .payment-history-table { width:100% !important; min-width:680px !important; table-layout:auto !important; font-size:11px; }
+    #infoModal .payment-history-table th { position:sticky; top:0; padding:7px 6px; background:#f3f6fa; text-align:center; z-index:2; }
+    #infoModal .payment-history-table td { padding:7px 6px; text-align:center !important; white-space:nowrap; word-break:normal; font-weight:normal; }
+    #infoModal .payment-history-table td.history-memo { max-width:180px; overflow:hidden; text-overflow:ellipsis; text-align:left !important; }
+    .btn-history-edit { border:1px solid #1a73e8; background:#fff; color:#1a73e8; border-radius:4px; padding:3px 7px; cursor:pointer; font-size:11px; font-weight:bold; }
+    .history-loading,.history-empty { padding:35px 12px; text-align:center; color:#5f6368; }
+    .pay-section { background: white; padding: 12px; border-radius: 8px; border: 1px solid #dadce0; margin-bottom: 10px; }
+    .payment-route-guide { margin:0 0 10px; padding:9px 11px; border-radius:7px; background:#e8f0fe; color:#174ea6; font-size:12px; line-height:1.5; }
+    .payment-route-guide.route-b { background:#fef7e0; color:#8a4b00; border:1px solid #f5d58a; }
+    .payment-evidence { display:none; margin:10px 0; padding:11px; border:1px solid #f0d594; border-radius:8px; background:#fffaf0; }
+    .payment-evidence label { display:block; margin-bottom:6px; color:#76520b; font-size:12px; font-weight:bold; }
+    .payment-evidence input { width:100%; padding:7px; border:1px solid #d8c38e; border-radius:6px; background:#fff; }
+    .payment-evidence-note { margin-top:5px; color:#6f6040; font-size:11px; line-height:1.45; }
+    .pay-item { background: #fff; border: 1px solid #d2e3fc; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+    .pay-item-header { background: #e8f0fe; padding: 8px; display: flex; gap: 5px; align-items: center; border-bottom: 1px solid #d2e3fc; }
+    .pay-item-body { padding: 8px; }
+    .pay-row { display: flex; gap: 5px; align-items: center; margin-bottom: 5px; }
+    .calc-toggle-row { display:flex; align-items:center; gap:8px; margin:7px 0; flex-wrap:wrap; }
+    .calc-option { display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:5px 9px; margin:0; border:1px solid #d7e1ef; border-radius:7px; background:#f7faff; color:#315b96; font-size:12px; font-weight:700; cursor:pointer; }
+    .calc-option.vacation { border-color:#f0d594; background:#fff9e8; color:#76520b; }
+    .calc-option.disabled { opacity:.48; cursor:not-allowed; }
+    .calc-option input { width:auto; margin:0; padding:0; }
+    .del-btn { background: #ff5252; color: white; border: none; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-left: auto; }
+    .btn-group { display: flex; gap: 8px; margin-top: 10px;}
+    button.main-btn { flex: 1; padding: 10px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; }
+    .btn-add { background: #34a853; color: white; width: 100%; margin-top: 5px; padding: 8px;}
+    .btn-submit { background: #1a73e8; color: white; }
+    .btn-close { background: #999; color: white; }
+    .sibling-alert { display: none; background: #fff8e1; border: 1px solid #ffecb3; padding: 8px; border-radius: 4px; margin-bottom: 8px; font-size: 12px; color: #663c00; }
+    .sibling-btn { background: #ffca28; border: none; padding: 4px 8px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px; margin-right: 5px; color: #333; }
+    .family-pay-box { display: none; background: #eef7ee; border: 1px solid #c8e6c9; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; color: #1b5e20; }
+    .family-pay-head { display: flex; align-items: center; gap: 6px; font-weight: bold; margin-bottom: 6px; }
+    .family-pay-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+    .family-pay-list label { color: #1b5e20; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 4px; margin: 0; }
+    .family-pay-list input { padding: 0; }
+    .family-pay-hint { display:block; margin: -2px 0 7px 23px; font-size: 12px; color:#5f6368; }
+    .guide-banner { 
+        background-color: #e8f0fe; 
+        color: #1967d2; 
+        padding: 8px 12px; 
+        border-radius: 6px; 
+        margin-bottom: 10px; 
+        font-size: 12px; 
+        border: 1px solid #d2e3fc; 
+        
+        display: flex; 
+        justify-content: space-between; /* 양쪽 끝 정렬 */
+        align-items: center; /* 수직 중앙 정렬 */
+      }
+
+    @media screen and (max-width: 1024px) {
+        .control-panel { flex-direction: column; align-items: stretch; }
+        .control-panel .input-group { width: 100%; margin-bottom: 5px; }
+        .modal-box { width: 90% !important; max-height: 85vh; }
+        body, input, select, button { font-size: 14px; }
+        .approval-toolbar { align-items:flex-start; flex-direction:column; }
+        .approval-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        
+        /* 만약 이래도 렉이 걸리면 아래 주석을 해제하세요 (Sticky 해제) */
+        /* thead th { position: static !important; } */
+    }
+    /* 표 셀 스타일 클래스 (수정할것_7.txt 내부 <style> 태그 맨 끝에 추가) */
+    .cell-base { vertical-align:middle; padding:4px 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px; cursor:pointer; }
+    .cell-amt { font-weight:bold; color:#333; cursor:pointer; }
+    .curr-bg { background:#f8fbff !important; }
+    .border-left { border-left: 2px solid #dfe1e5 !important; }
+    /* P 버튼 복구 스타일 */
+    .btn-p {
+      background-color: white;
+      color: #1a73e8;
+      border: 1px solid #1a73e8;
+      border-radius: 4px;
+      font-weight: bold;
+      padding: 3px 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .btn-p:hover {
+      background-color: #e8f0fe; /* 마우스 올릴 때 연한 파란색 배경 */
+    }
+  </style>
+</head>
+  <body>
+
+    <div class="guide-banner">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="guide-icon">💡</span>
+        <span id="dashboardGuideText">
+          <b>사용 팁:</b> 상태 옆의 <b>[P]버튼</b>을 통해서 수납 등록, <b>이름을 클릭</b>하면 상세정보를 확인합니다. 
+          <b>납부 기록을 클릭</b>하여 간편하게 편집할 수 있습니다.<br>
+          기본 설정으로 최근 3개월 내 납부자와 전달·현재 월 퇴원생은 미납 확인을 위해 표시되며 <b>'재원 여부'</b> 드롭다운에서 변경할 수 있습니다.
+        </span>
+      </div>
+      <button class="btn-help" onclick="openHelp()">❓ 사용법 보기</button>
+    </div>
+
+    <div class="control-panel">
+      <div class="input-group"><label>기준 월</label><input type="month" id="targetMonth" value="<?= Dashboard_defaultTargetYm_() ?>"></div>
+      <button class="btn-search" onclick="manualLoadData()">🔄조회</button>
+
+      <div class="input-group" style="margin-left: 10px; position: relative;">
+        <label>통합 검색 (이름/초성/학년)</label>
+        <div style="position: relative; display: flex; align-items: center;">
+          <input type="text" id="searchName" placeholder="예: 홍길동, ㅎㄱㄷ, 고3" 
+                 oninput="handleSearchMovement(event);" onkeydown="handleSearchKeydown(event);"
+                 style="width: 140px; padding-right: 25px;"> <span id="btnSearchClear" onclick="clearSearch()" 
+                style="display:none; position:absolute; right:5px; cursor:pointer; color:#999; font-weight:bold; font-size:14px;">✕</span>
+        </div>
+      </div>
+      <button type="button" id="filterStateIndicator" class="filter-state" onclick="clearAdditionalFilters()" title="추가 필터가 적용되지 않았습니다." aria-label="추가 필터 없음" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5c0-.55.45-1 1-1h16a1 1 0 0 1 .77 1.64L14 13.76V19a1 1 0 0 1-.55.89l-3 1.5A1 1 0 0 1 9 20.5v-6.74L3.23 5.64A1 1 0 0 1 3 5z"/></svg>
+      </button>
+      
+      <div style="flex:1"></div>
+      <button type="button" id="approvalQueueBtn" class="btn-approval-queue" onclick="openPaymentApprovalModal()" aria-label="승인 요청함, 대기 요청 0건">요청함<span id="approvalQueueCount" class="approval-queue-count" hidden>0</span></button>
+      <div class="input-group">
+        <label>재원 여부</label>
+        <select id="filterEnrollment" onchange="handleAdditionalFilterChange()" style="font-weight:bold; color:#1a73e8;">
+          <option value="DEFAULT" selected>기본 (재원+납부자)</option>
+          <option value="재원">재원생만</option>
+          <option value="ALL">전체 보기</option>
+          <option value="퇴원">퇴원생만</option>
+        </select>
+      </div>
+      <div class="input-group"><label>담당 원장</label><select id="filterTeacher" onchange="handleAdditionalFilterChange()"><option value="ALL">전체</option></select></div>
+            <div class="input-group"><label>납부 상태</label><select id="filterStatus" onchange="handleAdditionalFilterChange()"><option value="ALL">전체</option><option value="미납">미납</option><option value="부분납">부분납</option><option value="완납">완납</option><option value="특강">특강</option></select></div>
+      <div class="input-group"><label>정렬</label><select id="sortOption" onchange="applySortAndFilter()"><option value="NAME_ASC">이름순</option><option value="GRADE_ASC">학번순</option></select></div>
+      <a href="<?= ScriptApp.getService().getUrl() ?>" target="_top" class="btn-main-close" onclick="return smartClose(event);">✖ 닫기</a>
+    </div>
+
+
+    <div class="table-container">
+      <table>
+        <colgroup>
+          <col style="width: 42px;"> <col style="width: 58px;"> <col style="width: 40px;"> <col style="width: 50px;"> <col style="width: 27px;"> <col style="width: 42px;"> <col style="width: 30px;"> <col style="width: 35px;"> <col style="width: 50px;"> <col style="width: 35px;"> <col style="width: 30px;">
+          <col style="width: 35px;"> <col style="width: 50px;"> <col style="width: 35px;"> <col style="width: 30px;">
+          <col style="width: 35px;"> <col style="width: 50px;"> <col style="width: 35px;"> <col style="width: 30px;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th colspan="7" style="background:white;"><div class="student-info-head"><span>학생정보</span><button type="button" class="btn-quick-student-add" onclick="openStudentAddModal(event)">＋ 간편등록</button></div></th>
+            <th colspan="4" class="month-group-header curr-month-bg" id="th_curr">N월 (당월)</th>
+            <th colspan="4" class="month-group-header" id="th_prev">N-1월</th>
+            <th colspan="4" class="month-group-header" id="th_next">N+1월</th>
+          </tr>
+          <tr>
+            <th>학년</th><th>이름</th><th>담당</th><th>수강료</th><th data-term="수강료 기준일">기준일</th><th>상태</th><th>납부</th>
+            
+            <th class="curr-month-bg" style="border-left: 2px solid #dfe1e5;">날짜</th><th class="curr-month-bg">금액</th><th class="curr-month-bg">수단</th><th class="curr-month-bg">비고</th>
+            
+            <th style="border-left: 2px solid #dfe1e5;">날짜</th><th>금액</th><th>수단</th><th>비고</th>
+            
+            <th style="border-left: 2px solid #dfe1e5;">날짜</th><th>금액</th><th>수단</th><th>비고</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div id="paymentModal" class="modal-overlay">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span id="paymentModalTitle" class="modal-title">💳 수납 등록</span>
+          <button class="del-btn" style="background:#ccc; margin:0;" onclick="closeModal('paymentModal')">✕</button>
+        </div>
+        <div id="paymentRouteGuide" class="payment-route-guide"></div>
+        
+        <div class="pay-section">
+          <div class="pay-row">
+            <label>학생명</label>
+            <input type="text" id="m_studentInfo" readonly style="border:none; font-weight:bold; font-size:14px; background:#f1f3f4; flex:1;">
+            <input type="hidden" id="m_studentId">
+            <input type="hidden" id="m_studentFee">
+            <input type="hidden" id="m_baseDay">
+            <input type="hidden" id="m_familyId">
+            <input type="hidden" id="m_relName">
+          </div>
+          
+          <div id="m_siblingAlert" class="sibling-alert"></div>
+          <div id="m_familyPayBox" class="family-pay-box">
+            <label class="family-pay-head">
+              <input type="checkbox" id="m_familyPayEnabled" onchange="handleFamilyPayToggle()">
+              형제 함께 수납
+            </label>
+            <span id="m_familyPayHint" class="family-pay-hint"></span>
+            <div id="m_familyPayList" class="family-pay-list"></div>
+          </div>
+
+          <div class="pay-row" style="margin-top:10px;">
+            <div class="input-group" style="flex:1;">
+              <label>납부일 (실제 결제일)</label>
+              <input type="date" id="m_payDate">
+            </div>
+            <div class="input-group" style="flex:1;">
+              <label>결제 수단</label>
+              <select id="m_payMethod">
+                <?!= getPaymentMethodOptionsHtml_() ?>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="m_itemList" style="flex:1; overflow-y:auto; margin-bottom:10px;">
+          </div>
+
+        <button class="main-btn btn-add" onclick="addModalItem()">+ 수납 항목 추가</button>
+
+        <div id="m_evidenceSection" class="payment-evidence">
+          <label for="m_evidence">영수증·납부 증빙</label>
+          <input id="m_evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <div class="payment-evidence-note">관리 원장의 승인 요청에만 첨부됩니다. JPG·PNG·WebP, 최대 3장, 한 장당 2MB 이하입니다. 여러 승인 항목이면 같은 증빙이 각 항목에 함께 저장됩니다.</div>
+        </div>
+        
+        <div style="text-align:right; margin-top:10px; font-weight:bold; font-size:14px;">
+          총 합계: <span id="m_totalAmount" style="color:#1a73e8;">0</span>원
+        </div>
+        <div id="m_totalBreakdown" style="display:none; text-align:right; margin-top:4px; font-size:12px; color:#5f6368; line-height:1.5;"></div>
+
+        <div class="btn-group">
+          <button class="main-btn btn-close" onclick="closeModal('paymentModal')">취소</button>
+          <button id="m_paymentSubmitButton" class="main-btn btn-submit" onclick="submitModalPayment()">수납 저장</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="studentAddModal" class="modal-overlay" onclick="closeStudentAddModal()">
+      <div class="modal-box student-add-modal-box" onclick="event.stopPropagation()">
+        <div class="modal-header student-add-modal-header">
+          <span class="modal-title">➕ 학생 간편등록</span>
+          <button class="del-btn" style="background:#ccc; margin:0;" onclick="closeStudentAddModal()">✕</button>
+        </div>
+        <iframe id="studentAddFrame" title="학생 간편등록"></iframe>
+      </div>
+    </div>
+
+    <div id="editModal" class="modal-overlay">
+      <div class="modal-box" style="width: 300px;">
+        <div class="modal-header">
+          <span class="modal-title">✏️ 수납 내역 수정</span>
+          <button class="del-btn" style="background:#ccc; margin:0;" onclick="closeModal('editModal')">✕</button>
+        </div>
+        <div class="pay-section">
+          <input type="hidden" id="e_payId">
+
+          <div class="input-group" style="margin-bottom:10px;">
+            <label>귀속월 <span style="font-weight:normal; font-size:11px;">(수정불가)</span></label>
+            <input type="month" id="e_month" readonly style="background:#f1f3f4; color:#555;">
+          </div>
+          
+          <div class="input-group" style="margin-bottom:10px;">
+            <label>수납일</label>
+            <input type="date" id="e_payDate">
+          </div>
+          
+          <div class="input-group" style="margin-bottom:10px;">
+            <label>금액</label>
+            <input type="number" id="e_amount" style="font-weight:bold; color:#1a73e8;">
+          </div>
+          
+          <div class="input-group" style="margin-bottom:10px;">
+            <label>수납 수단</label>
+            <select id="e_method">
+              <?!= getPaymentMethodOptionsHtml_() ?>
+            </select>
+          </div>
+
+          <div class="input-group">
+             <label>비고</label>
+             <input type="text" id="e_memo" placeholder="메모 입력">
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="main-btn" onclick="submitEdit('DELETE')" style="background:#ff5252; color:white;">삭제</button>
+          <button class="main-btn btn-submit" onclick="submitEdit('UPDATE')">수정 저장</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="paymentApprovalModal" class="modal-overlay" onclick="closePaymentApprovalModal()">
+      <div class="modal-box approval-modal-box" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <span class="modal-title">승인 요청함</span>
+          <button class="del-btn" style="background:#ccc; margin:0;" onclick="closePaymentApprovalModal()">×</button>
+        </div>
+        <div class="approval-toolbar">
+          <span id="approvalQueueSummary">대기 요청을 불러오는 중입니다.</span>
+          <button type="button" class="btn-evidence" style="padding:6px 10px;border-radius:5px;cursor:pointer;" onclick="loadPaymentApprovalQueue(true,true)">새로고침</button>
+        </div>
+        <div id="paymentApprovalList" class="approval-list"><div class="approval-empty">불러오는 중...</div></div>
+      </div>
+    </div>
+
+    <div id="approvalEvidenceModal" class="modal-overlay" onclick="closeApprovalEvidence()" style="z-index:10040;">
+      <div class="modal-box evidence-modal-box" onclick="event.stopPropagation()">
+        <div class="modal-header" style="color:#fff;">
+          <span id="approvalEvidenceTitle">수납 증빙</span>
+          <button class="del-btn" style="background:#5f6368; margin:0;" onclick="closeApprovalEvidence()">×</button>
+        </div>
+        <div id="approvalEvidenceToolbar" class="evidence-toolbar">
+          <button type="button" onclick="changeApprovalEvidenceZoom_(-0.25)" title="축소 (-)">−</button>
+          <span id="approvalEvidenceZoomLabel">화면 맞춤</span>
+          <button type="button" onclick="changeApprovalEvidenceZoom_(0.25)" title="확대 (+)">＋</button>
+          <button type="button" onclick="fitApprovalEvidence_()" title="화면 맞춤 (0)">화면 맞춤</button>
+        </div>
+        <div id="approvalEvidenceViewport" class="evidence-image-viewport">
+          <div id="approvalEvidenceLoading" style="padding:45px;text-align:center;color:#fff;white-space:pre-wrap;">증빙을 불러오는 중입니다.</div>
+          <img id="approvalEvidenceImage" alt="수납 증빙 이미지" style="display:none;">
+        </div>
+      </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <script>
+      var paymentToleranceWon = Number(<?= PaymentDomain_toleranceWon_() ?>);
+      var paymentWarningHighWon = Number(<?= PaymentDomain_warningHighWon_() ?>);
+      var paymentSilentDiffWon = Number(<?= PaymentDomain_silentDiffWon_() ?>);
+      var dashboardMonthCutoffDay = Number(<?= OperationalSettings_getNumber_("DASHBOARD_MONTH_CUTOFF_DAY", 10) ?>) || 10;
+      var deferAppNavigationState = true;
+    </script>
+    <?!= includeHtml_('DashboardCoreModule'); ?>
+    <?!= includeHtml_('DashboardPaymentModule'); ?>
+    <?!= includeHtml_('DashboardEditModule'); ?>
+    <?!= includeHtml_('DashboardApprovalModule'); ?>
+    <div id="memoModal" class="modal-overlay" onclick="closeModal('memoModal')">
+      <div class="modal-box" style="width: 300px; max-width:90%;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <span class="modal-title">📝 메모 상세</span>
+          <button class="del-btn" style="background:#ccc; margin:0;" onclick="closeModal('memoModal')">✕</button>
+        </div>
+        <div id="memoViewContent" style="padding:15px; background:white; border:1px solid #ddd; border-radius:4px; min-height:80px; white-space:pre-wrap; line-height:1.4;"></div>
+        
+        <div class="btn-group">
+          <button class="main-btn btn-close" onclick="closeModal('memoModal')">닫기</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="multiSelectModal" class="modal-overlay" onclick="closeModal('multiSelectModal')">
+      <div class="modal-box" style="width: 350px;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <span class="modal-title">📂 납부 기록 선택</span>
+          <button class="del-btn" style="background:#ccc; margin:0;" onclick="closeModal('multiSelectModal')">✕</button>
+        </div>
+        <div style="padding:10px; font-size:12px; color:#666;">
+          수정하거나 삭제할 납부 건을 선택해주세요.
+        </div>
+        <div id="multiSelectList" style="display:flex; flex-direction:column; gap:8px; padding:0 10px 15px 10px;"></div>
+      </div>
+    </div>
+<div id="helpOverlay">
+      <div class="help-box">
+        <div class="help-header">
+          <span>📖 학원비 관리 시스템 매뉴얼</span>
+          <button onclick="closeHelp()" style="background:none; border:none; color:white; font-size:20px; cursor:pointer;">✕</button>
+        </div>
+        <div class="help-content">
+          <iframe id="helpFrame"></iframe>
+        </div>
+      </div>
+    </div>
+
+    <?!= includeHtml_('DashboardUtilityModule'); ?>
+  <?!= includeHtml_('StudentPickerCommon'); ?>
+  <?!= includeHtml_("StudentInfoModalCommon"); ?>
+<?!= includeHtml_("AppGlossary"); ?>
+</body>
+</html>

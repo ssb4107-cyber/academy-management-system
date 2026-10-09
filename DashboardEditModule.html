@@ -1,0 +1,128 @@
+<script>
+      function applyPaymentEditResult(form) {
+        var payId = String(form && form.payId || "");
+        if (!payId) return false;
+        for (var s = 0; s < rawList.length; s++) {
+          var student = rawList[s];
+          var periods = ["curr", "prev", "next"];
+          for (var p = 0; p < periods.length; p++) {
+            var periodKey = periods[p];
+            var payments = Array.isArray(student[periodKey]) ? student[periodKey] : [];
+            for (var i = 0; i < payments.length; i++) {
+              var payment = payments[i];
+              if (String(payment.payId || "") !== payId) continue;
+              if (String(form.mode || "") === "DELETE") return String(student.id);
+              // 대시보드 수정 화면은 귀속월이 읽기 전용이므로 기존 행의 위치와 계산 메타데이터는 유지합니다.
+              if (String(payment.month || "") !== String(form.month || "")) return false;
+              var updatedFullDate = String(form.payDate || "");
+              payments[i] = Object.assign({}, payment, {
+                fullDate: updatedFullDate,
+                date: updatedFullDate.length >= 10 ? updatedFullDate.substring(5, 10) : updatedFullDate,
+                amount: Number(form.amount || 0),
+                method: String(form.method || ""),
+                memo: String(form.memo || "")
+              });
+              applySortAndFilter();
+              return String(student.id);
+            }
+          }
+        }
+        return false;
+      }
+
+      function openEditModal(data) {
+        document.getElementById("e_payId").value = data.payId;
+        document.getElementById("e_payDate").value = data.fullDate;
+        var safeMonth = data.month || (data.fullDate ? data.fullDate.substring(0, 7) : "");
+        document.getElementById("e_month").value = safeMonth;
+        document.getElementById("e_amount").value = data.amount;
+        document.getElementById("e_method").value = data.method || "카드";
+        document.getElementById("e_memo").value = data.memo || "";
+        document.getElementById("editModal").style.display = "flex";
+      }
+
+      function submitEdit(mode) {
+        var form = {
+          payId: document.getElementById("e_payId").value,
+          payDate: document.getElementById("e_payDate").value,
+          month: document.getElementById("e_month").value,
+          amount: document.getElementById("e_amount").value,
+          method: document.getElementById("e_method").value,
+          memo: document.getElementById("e_memo").value,
+          mode: mode 
+        };
+
+        // 삭제/수정 확인 질문은 남겨두는 게 안전합니다 (실수 방지)
+        if(!confirm(mode === "DELETE" ? "수납 내역을 휴지통으로 이동하시겠습니까?\n2개월 동안 복구할 수 있습니다." : "수정하시겠습니까?")) return;
+        if (mode === "DELETE") {
+          var deleteReason = prompt("삭제 사유를 입력해주세요.", "입력 오류 정정");
+          if (deleteReason === null) return;
+          form.deleteReason = deleteReason.trim();
+        }
+        
+        google.script.run
+          .withSuccessHandler(function(res){
+            closeModal('editModal'); // 1. 창 닫기
+            var message = (res && res.message) ? res.message : String(res || "수납 내역을 반영했습니다.");
+            var affectedStudentId = applyPaymentEditResult(form);
+            if (!affectedStudentId) {
+              loadData();
+            } else {
+              refreshAffectedDashboardStudents([affectedStudentId]);
+            }
+            showToast(message, "success");
+            if (dashboardHistoryStudentId) loadStudentPaymentHistory(dashboardHistoryStudentId, true);
+          })
+          .withFailureHandler(function(err){
+             alert(actionableErrorMessage(err, "수납 내역 수정"));
+          })
+          .updatePaymentData(form);
+      }
+      // [수정] 다중 선택 모달 (경고 메시지 파라미터 추가됨)
+      function openMultiSelectModal(list, warnMsg) {
+          var container = document.getElementById("multiSelectList");
+          container.innerHTML = ""; 
+
+          // ★ 경고 메시지가 있으면 상단에 표시
+          if (warnMsg) {
+              var alertDiv = document.createElement("div");
+              alertDiv.style.cssText = "background:#fce8e6; color:#c5221f; padding:10px; border-radius:6px; margin-bottom:10px; font-size:12px; white-space:pre-wrap; border:1px solid #f28b82;";
+              alertDiv.innerText = warnMsg.replace(/\\n/g, "\n"); // 줄바꿈 복원
+              container.appendChild(alertDiv);
+          }
+
+          var displayList = list.filter(function(item) {
+              return !item.isVirtual && (Number(item.amount) > 0 || item.type !== "휴원");
+          });
+          
+          if (displayList.length === 0) {
+              alert("수정할 수 있는 납부 내역이 없습니다.\n(기간 휴원으로 등록된 상태입니다)");
+              return;
+          }
+          // if (displayList.length === 1) { 납부기록이 1개일 때에 바로 보여주는 로직 삭제; 경고문구가 뜨는 이유를 보기좋게 표기해주기 위해서
+          //     openEditModal(displayList[0]);
+          //     return;
+          // }
+
+          displayList.forEach(function(item) {
+              var row = document.createElement("div");
+              row.style.cssText = "display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid #ddd; border-radius:6px; cursor:pointer; background:white;";
+              row.onmouseover = function() { this.style.background = "#f8fbff"; this.style.borderColor = "#1a73e8"; };
+              row.onmouseout = function() { this.style.background = "white"; this.style.borderColor = "#ddd"; };
+              
+              row.onclick = function() {
+                  closeModal('multiSelectModal');
+                  openEditModal(item);
+              };
+
+              var amtDisplay = Number(item.amount).toLocaleString() + '원';
+              var info = '<div><span style="font-weight:bold; color:#333;">' + escapeHtml(item.date) + '</span> ' + 
+                         '<span style="color:#555;">' + escapeHtml(item.type || "수강료") + '</span></div>' +
+                         '<div style="font-weight:bold; color:#1a73e8;">' + amtDisplay + '</div>';
+              row.innerHTML = info;
+              container.appendChild(row);
+          });
+
+          document.getElementById("multiSelectModal").style.display = "flex";
+      }
+</script>

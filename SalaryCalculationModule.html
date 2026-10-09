@@ -1,0 +1,401 @@
+<script>
+      function populateSalaryTeacherFilter(list) {
+        var select = document.getElementById("teacherSelect");
+        select.innerHTML = '<option value="">전체 원장님 보기</option>';
+        (list || []).forEach(function(t) {
+          var opt = document.createElement("option");
+          opt.value = t;
+          opt.text = t + " 원장";
+          select.appendChild(opt);
+        });
+      }
+
+      function renderSalaryResults(ym, results) {
+        var container = document.getElementById("resultContainer");
+        container.innerHTML = "";
+        if (!results || results.length === 0) {
+          container.innerHTML = '<div style="padding:30px; text-align:center;">데이터가 없습니다.</div>';
+          return;
+        }
+        results.forEach(function(item) {
+          renderResult(container, ym, item.teacher, item.data, false, true, item.settlement || null, item.teacherId || "");
+        });
+        filterTeacher();
+      }
+
+      function loadSalaryDashboardInitialData() {
+        var ym = document.getElementById("targetMonth").value;
+        var container = document.getElementById("resultContainer");
+        container.innerHTML = '<div style="text-align:center; padding:50px;">⏳ 데이터를 불러오는 중입니다...</div>';
+        setSalaryUiBusy(true);
+        google.script.run.withSuccessHandler(function(payload) {
+          setSalaryUiBusy(false);
+          payload = payload || {};
+          if (payload.profile && payload.profile.isSuperAdmin) document.body.classList.remove("read-only");
+          populateSalaryTeacherFilter(payload.teachers || []);
+          renderSalaryResults(ym, payload.results || []);
+        }).withFailureHandler(function(err) {
+          setSalaryUiBusy(false);
+          container.textContent = "급여 데이터를 불러오지 못했습니다.";
+          alert(salaryActionableError(err, "급여 조회"));
+        }).getSalaryDashboardInitialData(ym);
+      }
+
+      // ★ [신규] 전체 데이터 자동 호출 함수
+      function fetchAllData() {
+        var ym = document.getElementById("targetMonth").value;
+        var container = document.getElementById("resultContainer");
+        container.innerHTML = '<div style="text-align:center; padding:50px;">⏳ 데이터를 불러오는 중입니다...</div>';
+        setSalaryUiBusy(true);
+
+        google.script.run
+          .withSuccessHandler(function(results) {
+             setSalaryUiBusy(false);
+             renderSalaryResults(ym, results || []);
+          })
+          .withFailureHandler(function(err) { setSalaryUiBusy(false); alert(salaryActionableError(err, "급여 계산")); })
+          .calculateAllSalaries(ym);
+      }
+
+      // ★ [신규] 화면 필터링 함수 (서버 호출 없이 화면만 제어)
+      function filterTeacher() {
+        var selected = document.getElementById("teacherSelect").value;
+        var sections = document.querySelectorAll(".print-section");
+        sections.forEach(function(sec) {
+          // 선택한 원장이 없거나(전체보기), 섹션 ID가 선택한 원장과 일치하면 표시
+          if (selected === "" || sec.dataset.teacher === selected) {
+            sec.style.display = "block";
+          } else {
+            sec.style.display = "none";
+          }
+        });
+      }
+
+      function renderProtectedSettlement(container, ym, teacher, data, settlement) {
+        var parts = ym.split("-");
+        var wrapper = document.createElement("div");
+        wrapper.className = "print-section" + (data.snapshotMissing ? " snapshot-invalid" : " summary-only");
+        wrapper.dataset.teacher = teacher;
+        wrapper.dataset.ym = ym;
+        wrapper.dataset.settlementId = settlement ? settlement.id : "";
+        var notice = data.snapshotMissing
+          ? '<div class="snapshot-warning">확정 당시 저장된 학생별 계산 근거가 없어 상세 정산서를 표시하거나 출력할 수 없습니다.<br>급여 데이터 점검을 실행해주세요.</div>'
+          : '<div class="summary-only-note">과거 수동 급여 기록입니다. 학생별 계산 근거를 현재 데이터로 재구성하지 않고 저장된 확정·지급 금액만 표시합니다.</div>';
+        wrapper.innerHTML = '<div class="print-header"><h1>' + escapeHtml(parts[0]) + '년 ' + escapeHtml(parts[1]) + '월 급여 정산 기록</h1><h2 class="ph_sub_name">담당: ' + escapeHtml(teacher) + ' 원장님</h2></div>' +
+          '<div class="salary-policy saved">🔒 ' + escapeHtml(salaryYmLabel(ym)) + '월 확정' + (settlement.confirmedAt ? ' · ' + escapeHtml(settlement.confirmedAt) : '') + (settlement.confirmedByName || settlement.confirmedBy ? ' · 확정자 ' + escapeHtml(settlement.confirmedByName || settlement.confirmedBy) : '') + '</div>' +
+          '<div class="summary-cards"><div class="card"><div class="card-title">확정액</div><div class="card-value">' + Number(settlement.finalAmount || 0).toLocaleString() + '</div></div><div class="card"><div class="card-title">지급액</div><div class="card-value">' + Number(settlement.paidAmount || 0).toLocaleString() + '</div></div><div class="card highlight"><div class="card-title">잔액</div><div class="card-value final">' + Number(settlement.balanceAmount || 0).toLocaleString() + '</div></div></div>' + notice;
+        container.appendChild(wrapper);
+        return wrapper;
+      }
+
+      function renderResult(container, ym, teacher, data, addPageBreak, enableInput, settlement, teacherId) {
+        if (settlement && (data.summaryOnly || data.snapshotMissing)) return renderProtectedSettlement(container, ym, teacher, data, settlement);
+        var [y, m] = ym.split("-");
+        var list = data.list;
+        var summary = data.summary;
+        var wrapperId = (container.id === "preparedExportContainer" ? "salary_export_" : "salary_section_") + container.children.length;
+        var repRate = (list.length > 0) ? list[0].rate : 0.6; 
+
+        var wrapper = document.createElement("div");
+        wrapper.id = wrapperId;
+        wrapper.className = "print-section" + (settlement ? "" : " draft-watermark");
+        wrapper.dataset.teacher = teacher;
+        wrapper.dataset.teacherId = teacherId || (settlement && settlement.teacherId) || "";
+        wrapper.dataset.ym = ym;
+        wrapper.dataset.baseFinal = summary.finalPay; 
+        wrapper.dataset.teacherRate = repRate;
+        var savedAdjustments = Array.isArray(data.adjustments) ? data.adjustments : [];
+        wrapper.dataset.adjustments = JSON.stringify(savedAdjustments); 
+        wrapper.dataset.exclusions = JSON.stringify(list.filter(function(item) { return !!item.directReceiptExcluded; }).map(function(item) {
+          return { studentId:item.studentId, reason:item.directReceiptReason || "선입금" };
+        }));
+        wrapper.dataset.settlementId = settlement ? settlement.id : "";
+
+        var finalizeText = settlement ? ("확정됨 · " + settlement.status) : "정산 확정 저장";
+        var finalizeAttr = settlement ? "disabled" : `onclick="finalizeSection('${wrapperId}')"`;
+        var policyHtml = settlement
+          ? `<div class="salary-policy saved">🔒 ${escapeHtml(salaryYmLabel(settlement.ym))}월 확정${settlement.confirmedAt ? " · " + escapeHtml(settlement.confirmedAt) : ""}${settlement.confirmedByName || settlement.confirmedBy ? " · 확정자 " + escapeHtml(settlement.confirmedByName || settlement.confirmedBy) : ""}</div>`
+          : `<div class="salary-policy screen-only-audit">계산 기준: 실수납 적용 ${Number(summary.actualReceivedCount || 0)}명 · 규정금액 적용 ${Number(summary.theoreticalCount || 0)}명 · 특강비만 반영 ${Number(summary.specialOnlyCount || 0)}명 · 선입금 지급 제외 <span class="direct-exclusion-count">0</span>명<span class="preview-status">서버 확인 전</span></div>`;
+
+        var headerHtml = `
+          <div class="print-header">
+            <button class="btn-finalize" ${finalizeAttr}>${escapeHtml(finalizeText)}</button>
+            <h1 id="ph_title">${y}년 ${m}월 급여 정산서</h1>
+            <h2 class="ph_sub_name">담당: ${escapeHtml(teacher)} 원장님</h2>
+          </div>
+          ${policyHtml}
+        `;
+        var canAdjust = enableInput && !settlement;
+        var btnAttr = canAdjust ? `onclick="openModal('${wrapperId}')"` : "";
+        var btnText = canAdjust ? `<div class="adjust-btn-text">✏️ 입력/수정</div>` : "";
+        var shownAdjustment = settlement ? Number(settlement.adjustmentAmount || 0) : 0;
+        var shownFinal = settlement ? Number(settlement.finalAmount || 0) : summary.finalPay;
+        salarySectionData[wrapperId] = { list: list, originalSummary: summary };
+        var summaryHtml = `
+          <div class="summary-cards">
+            <div class="card"><div class="card-title">총 매출</div><div class="card-value total-revenue-val">${summary.totalRevenue.toLocaleString()}</div></div>
+            <div class="card"><div class="card-title">원장님 지분</div><div class="card-value teacher-share-val">${summary.teacherShare.toLocaleString()}</div></div>
+            <div class="card"><div class="card-title">세금(3.3%)</div><div class="card-value tax-val">${summary.tax.toLocaleString()}</div></div>
+            <div class="card adjust" ${btnAttr}>
+              <div class="card-title">정산 조정 (누락/공제)</div><div class="card-value adjust-val" style="color:#d93025;">${shownAdjustment.toLocaleString()}</div>${btnText}
+            </div>
+            <div class="card highlight"><div class="card-title">💰 실 수령액</div><div class="card-value final final-val">${shownFinal.toLocaleString()}</div></div>
+          </div>
+          <div class="print-details" id="print_details_${wrapperId}"></div>
+        `;
+        
+        var tableHtml = `
+          <div class="table-container">
+            <table>
+              <colgroup>
+                <col style="width: 8%;">  <col style="width: 9%;"> <col style="width: 6%;">  <col style="width: 11%;"> <col style="width: 5%;">  <col style="width: 9%;"> <col style="width: 9%;">  <col style="width: 9%;"> <col style="width: 9%;"> <col style="width: 20%;"> <col class="direct-col" style="width:5%;"> </colgroup>
+              <thead><tr><th>이름</th> <th>학년</th> <th>비율</th> <th>기간</th> <th>일수</th><th>수강료</th> <th style="color:#137333;">추가매출</th> <th>총매출</th> <th>원장님몫</th> <th>비고</th><th class="direct-col">선지급</th></tr></thead>
+              <tbody>
+        `;
+        if (list.length === 0) { tableHtml += '<tr><td colspan="11" style="padding:30px;">데이터 없음</td></tr>'; } 
+        else {
+          list.sort(function(a, b) { return String(a.grade).localeCompare(String(b.grade)); });
+          list.forEach(function(item) {
+            var nameHtml = '<button type="button" class="student-info-link" data-student-modal-id="' + escapeHtml(item.studentId || "") + '">' + escapeHtml(item.name) + '</button>';
+            var hasExitBadge = salaryIsLeavingNextMonthForDisplay(item, ym) || item.status === "퇴원";
+            if (hasExitBadge) nameHtml = "<span class='badge badge-planned-exit' title='퇴원일: " + escapeHtml(item.exitDate || "-") + "'>퇴원예정</span> " + nameHtml;
+            if (item.isNew) nameHtml = "🐥 " + nameHtml;
+            var rateText = Math.round(item.rate * 100) + "%";
+            var specialRevHtml = (item.specialRevenue > 0) ? `<span class="money-plus">+${item.specialRevenue.toLocaleString()}</span>` : "-";
+            var feeDiffHtml = ""; if (item.feeDiff !== 0) { var sign = item.feeDiff > 0 ? "▲" : "▼"; feeDiffHtml = `<div style="font-size:10px; color:${item.feeDiff > 0 ? 'red' : 'blue'};">(${sign}${item.feeDiff.toLocaleString()})</div>`; }
+            var baseNote = salaryNoteForDisplay(item);
+            var noteHtml = '<span class="note-base">' + (baseNote ? escapeHtml(baseNote).replace(/\n/g, "<br>") : "") + '</span>' +
+              '<div class="direct-note">선입금 · 급여 지급 제외</div>';
+            var directButton = canAdjust ? `<button class="btn-direct" onclick="toggleDirectReceipt('${wrapperId}','${encodeURIComponent(item.studentId || '')}')">선입금</button>` : "";
+            tableHtml += `<tr class="${item.directReceiptExcluded ? 'salary-excluded' : ''}" data-student-id="${escapeHtml(item.studentId || '')}"><td style="font-weight:bold;">${nameHtml}</td><td style="white-space:nowrap;">${escapeHtml(item.grade)}</td><td>${rateText}</td><td style="font-size:11px;">${escapeHtml(item.dateRange)}<br><span style="color:#999;">(퇴원:${escapeHtml(item.exitDate)})</span></td><td>${item.activeDays}</td><td class="money">${item.proratedRevenue.toLocaleString()}${feeDiffHtml}</td><td class="money">${specialRevHtml}</td><td class="money" style="background:#f8fbff;">${item.totalRowRevenue.toLocaleString()}</td><td class="money" style="color:#1a73e8;">${item.calculatedShare.toLocaleString()}</td><td class="note-cell">${noteHtml}</td><td class="direct-col">${directButton}</td></tr>`;
+          });
+        }
+        tableHtml += `</tbody></table></div>`;
+        wrapper.innerHTML = headerHtml + summaryHtml + tableHtml;
+        container.appendChild(wrapper);
+        if (settlement && savedAdjustments.length) renderSavedAdjustmentDetails(wrapperId, savedAdjustments);
+      }
+
+      function toggleDirectReceipt(wrapperId, encodedStudentId) {
+        var studentId = decodeURIComponent(encodedStudentId);
+        var wrapper = document.getElementById(wrapperId);
+        var exclusions = JSON.parse(wrapper.dataset.exclusions || "[]");
+        var index = exclusions.findIndex(function(item) { return item.studentId === studentId; });
+        if (index >= 0) exclusions.splice(index, 1);
+        else {
+          var reason = prompt("선입금으로 이번 급여에서 제외할 사유를 입력하세요.", "원장 직접 현금 수령(선입금)");
+          if (!reason) return;
+          exclusions.push({ studentId: studentId, reason: reason });
+        }
+        wrapper.dataset.exclusions = JSON.stringify(exclusions);
+        recomputeSectionAfterExclusion(wrapperId);
+      }
+
+      function recomputeSectionAfterExclusion(wrapperId) {
+        var wrapper = document.getElementById(wrapperId);
+        var source = salarySectionData[wrapperId];
+        var exclusions = JSON.parse(wrapper.dataset.exclusions || "[]");
+        var excluded = {};
+        exclusions.forEach(function(item) { excluded[item.studentId] = item; });
+        var included = source.list.filter(function(item) { return !excluded[item.studentId]; });
+        var totalRevenue = included.reduce(function(total, item) { return total + Number(item.totalRowRevenue || 0); }, 0);
+        var teacherShare = included.reduce(function(total, item) { return total + Number(item.calculatedShare || 0); }, 0);
+        var tax = truncateMoney(teacherShare * 0.033);
+        var baseFinal = teacherShare - tax;
+        var adjustments = JSON.parse(wrapper.dataset.adjustments || "[]");
+        var adjustmentTotal = adjustments.reduce(function(total, item) { return total + Number(item.finalAmount || 0); }, 0);
+        wrapper.dataset.baseFinal = baseFinal;
+        wrapper.querySelector(".total-revenue-val").innerText = totalRevenue.toLocaleString();
+        wrapper.querySelector(".teacher-share-val").innerText = teacherShare.toLocaleString();
+        wrapper.querySelector(".tax-val").innerText = tax.toLocaleString();
+        wrapper.querySelector(".final-val").innerText = (baseFinal + adjustmentTotal).toLocaleString();
+        var countEl = wrapper.querySelector(".direct-exclusion-count");
+        if (countEl) countEl.innerText = exclusions.length;
+        wrapper.querySelectorAll("tr[data-student-id]").forEach(function(row) {
+          var isExcluded = !!excluded[row.dataset.studentId];
+          row.classList.toggle("salary-excluded", isExcluded);
+          var directNote = row.querySelector(".direct-note");
+          if (directNote && isExcluded) directNote.textContent = "선입금 · 급여 지급 제외";
+          var button = row.querySelector(".btn-direct");
+          if (button) button.innerText = isExcluded ? "되돌리기" : "선입금";
+        });
+        scheduleSalaryPreview(wrapperId);
+      }
+
+      function salaryPreviewPayload(wrapper, freshSource) {
+        return {
+          ym: wrapper.dataset.ym,
+          teacherId: wrapper.dataset.teacherId,
+          exclusions: JSON.parse(wrapper.dataset.exclusions || "[]"),
+          adjustments: JSON.parse(wrapper.dataset.adjustments || "[]"),
+          freshSource: freshSource === true
+        };
+      }
+
+      function scheduleSalaryPreview(wrapperId) {
+        var wrapper = document.getElementById(wrapperId);
+        if (!wrapper || wrapper.dataset.settlementId) return;
+        wrapper.dataset.previewToken = "";
+        var status = wrapper.querySelector(".preview-status");
+        if (status) status.textContent = "서버 재확인 대기";
+        clearTimeout(wrapper.previewTimer);
+        wrapper.previewTimer = setTimeout(function() { requestSalaryPreview(wrapperId, null, true); }, 300);
+      }
+
+      function renderServerAdjustmentDetails(wrapperId, items) {
+        var detailContainer = document.getElementById("print_details_" + wrapperId);
+        if (!detailContainer) return;
+        if (!items.length) { detailContainer.innerHTML = ""; return; }
+        var total = 0;
+        var html = `<h3>🧾 정산 조정 상세 내역</h3>`;
+        items.forEach(function(item) {
+          total += Number(item.finalAmount) || 0;
+          var sign = Number(item.finalAmount) >= 0 ? "+" : "";
+          var options = []; if (item.isRate) options.push("비율적용"); if (item.isTax) options.push("세금공제");
+          html += `<div class="detail-row"><span>${escapeHtml(item.typeText || "조정")} ${escapeHtml(options.length ? "(" + options.join(", ") + ")" : "")} <span style="color:#777;">${escapeHtml(item.note || "")}</span></span><span style="font-weight:bold;">${sign}${Number(item.finalAmount).toLocaleString()}원</span></div>`;
+        });
+        html += `<div style="text-align:right; font-weight:bold; margin-top:5px; border-top:1px solid #333; padding-top:5px;">조정 합계: ${total.toLocaleString()}원</div>`;
+        detailContainer.innerHTML = html;
+      }
+
+      function requestSalaryPreview(wrapperId, onSuccess, silentFailure, onFailure, freshSource) {
+        var wrapper = document.getElementById(wrapperId);
+        if (!wrapper || wrapper.dataset.settlementId) { if (onSuccess) onSuccess(null); return; }
+        clearTimeout(wrapper.previewTimer);
+        var requestVersion = Number(wrapper.dataset.previewVersion || 0) + 1;
+        wrapper.dataset.previewVersion = requestVersion;
+        var status = wrapper.querySelector(".preview-status");
+        if (status) status.textContent = "서버 계산 확인 중...";
+        google.script.run.withSuccessHandler(function(result) {
+          if (Number(wrapper.dataset.previewVersion) !== requestVersion) return;
+          wrapper.dataset.previewToken = result.previewToken || "";
+          wrapper.dataset.baseFinal = result.baseAmount;
+          wrapper.dataset.expectedFinal = result.finalAmount;
+          wrapper.dataset.teacherRate = result.representativeRate;
+          wrapper.dataset.adjustments = JSON.stringify(result.adjustments || []);
+          var summary = result.data.summary;
+          wrapper.querySelector(".total-revenue-val").innerText = Number(summary.totalRevenue || 0).toLocaleString();
+          wrapper.querySelector(".teacher-share-val").innerText = Number(summary.teacherShare || 0).toLocaleString();
+          wrapper.querySelector(".tax-val").innerText = Number(summary.tax || 0).toLocaleString();
+          wrapper.querySelector(".adjust-val").innerText = Number(result.adjustmentAmount || 0).toLocaleString();
+          wrapper.querySelector(".final-val").innerText = Number(result.finalAmount || 0).toLocaleString();
+          renderServerAdjustmentDetails(wrapperId, result.adjustments || []);
+          if (currentWrapperId === wrapperId) currentAdjustments = result.adjustments || [];
+          if (status) status.textContent = "서버 계산 확인됨";
+          if (onSuccess) onSuccess(result);
+        }).withFailureHandler(function(error) {
+          if (Number(wrapper.dataset.previewVersion) !== requestVersion) return;
+          wrapper.dataset.previewToken = "";
+          if (status) status.textContent = "서버 확인 실패";
+          if (!silentFailure) alert(salaryActionableError(error, "급여 미리보기 확인"));
+          if (onFailure) onFailure(error);
+        }).previewSalarySettlement(salaryPreviewPayload(wrapper, freshSource));
+      }
+
+      function renderSavedAdjustmentDetails(wrapperId, items) {
+        var detailContainer = document.getElementById("print_details_" + wrapperId);
+        var total = 0;
+        var html = `<h3>🧾 확정된 정산 조정 내역</h3>`;
+        items.forEach(function(item) {
+          total += Number(item.finalAmount) || 0;
+          var sign = Number(item.finalAmount) >= 0 ? "+" : "";
+          html += `<div class="detail-row"><span>${escapeHtml(item.typeText || "조정")} <span style="color:#777;">${escapeHtml(item.note || "")}</span></span><span style="font-weight:bold;">${sign}${Number(item.finalAmount).toLocaleString()}원</span></div>`;
+        });
+        html += `<div style="text-align:right; font-weight:bold; margin-top:5px; border-top:1px solid #333; padding-top:5px;">조정 합계: ${total.toLocaleString()}원</div>`;
+        detailContainer.innerHTML = html;
+      }
+
+      // [조정 모달 로직]
+      function openModal(wrapperId) {
+        currentWrapperId = wrapperId; var wrapper = document.getElementById(wrapperId);
+        currentAdjustments = JSON.parse(wrapper.dataset.adjustments || "[]");
+        globalTeacherRate = parseFloat(wrapper.dataset.teacherRate);
+        document.getElementById("lblRate").innerText = `비율 적용 (${Math.round(globalTeacherRate*100)}%)`;
+        document.getElementById("adjAmount").value = ""; document.getElementById("adjNote").value = "";
+        renderAdjList(); document.getElementById("adjustModal").style.display = "flex";
+      }
+      function closeModal() { document.getElementById("adjustModal").style.display = "none"; }
+      function roundMoney(value) { return value >= 0 ? Math.floor(value + 0.5) : Math.ceil(value - 0.5); }
+      function truncateMoney(value) { return value >= 0 ? Math.floor(value) : Math.ceil(value); }
+      function addAdjustmentItem() {
+        var typeSelect = document.getElementById("adjType"); var typeText = typeSelect.options[typeSelect.selectedIndex].text; var typeVal = typeSelect.value;
+        var amount = Number(document.getElementById("adjAmount").value); var note = document.getElementById("adjNote").value;
+        var isRate = document.getElementById("chkRate").checked; var isTax = document.getElementById("chkTax").checked;
+        if (amount <= 0) { alert("금액을 입력하세요."); return; }
+        var calcAmount = amount;
+        if (isRate) calcAmount = roundMoney(calcAmount * globalTeacherRate);
+        if (isTax) calcAmount = calcAmount - truncateMoney(calcAmount * 0.033);
+        var finalAmount = typeVal.startsWith("ADD") ? calcAmount : -calcAmount;
+        currentAdjustments.push({ type: typeVal, typeText: typeText, originAmount: amount, finalAmount: finalAmount, note: note, isRate: isRate, isTax: isTax });
+        document.getElementById("adjAmount").value = ""; document.getElementById("adjNote").value = ""; renderAdjList();
+      }
+      function deleteItem(index) { currentAdjustments.splice(index, 1); renderAdjList(); }
+      function renderAdjList() {
+        var listEl = document.getElementById("adjList"); listEl.innerHTML = ""; var total = 0;
+        currentAdjustments.forEach((item, idx) => {
+          total += item.finalAmount; var desc = `${item.typeText} (${item.originAmount.toLocaleString()})`;
+          if(item.isRate) desc += ` [비율]`; if(item.isTax) desc += ` [세금]`; if(item.note) desc += ` - ${item.note}`;
+          var color = item.finalAmount >= 0 ? "blue" : "red"; var sign = item.finalAmount >= 0 ? "+" : "";
+          var div = document.createElement("div"); div.className = "modal-item";
+          div.innerHTML = `<span class="item-desc">${escapeHtml(desc)}</span><span class="item-amt" style="color:${color}">${sign}${item.finalAmount.toLocaleString()}</span><span class="item-del" onclick="deleteItem(${idx})">🗑️</span>`;
+          listEl.appendChild(div);
+        });
+        var totEl = document.getElementById("adjTotalDisplay"); totEl.innerText = total.toLocaleString(); totEl.style.color = total >= 0 ? "#1a73e8" : "#d93025";
+      }
+      function applyAdjustments() {
+        var wrapper = document.getElementById(currentWrapperId); wrapper.dataset.adjustments = JSON.stringify(currentAdjustments);
+        var totalAdj = currentAdjustments.reduce((acc, item) => acc + item.finalAmount, 0); var baseFinal = Number(wrapper.dataset.baseFinal); var finalPay = baseFinal + totalAdj;
+        var adjValEl = wrapper.querySelector(".adjust-val"); adjValEl.innerText = totalAdj.toLocaleString(); adjValEl.style.color = totalAdj >= 0 ? "#1a73e8" : "#d93025";
+        wrapper.querySelector(".final-val").innerText = finalPay.toLocaleString();
+        var detailContainer = document.getElementById("print_details_" + currentWrapperId);
+        if (currentAdjustments.length > 0) {
+          var html = `<h3>🧾 정산 조정 상세 내역</h3>`;
+          currentAdjustments.forEach(item => {
+             var sign = item.finalAmount >= 0 ? "+" : ""; var opts = []; if(item.isRate) opts.push("비율적용"); if(item.isTax) opts.push("세금공제"); var optStr = opts.length > 0 ? `(${opts.join(", ")})` : "";
+             html += `<div class="detail-row"><span>${escapeHtml(item.typeText)} ${escapeHtml(optStr)} <span style="color:#777;">${escapeHtml(item.note)}</span></span><span style="font-weight:bold;">${sign}${item.finalAmount.toLocaleString()}원</span></div>`;
+          });
+          html += `<div style="text-align:right; font-weight:bold; margin-top:5px; border-top:1px solid #333; padding-top:5px;">조정 합계: ${totalAdj.toLocaleString()}원</div>`;
+          detailContainer.innerHTML = html;
+        } else { detailContainer.innerHTML = ""; }
+        closeModal();
+        scheduleSalaryPreview(currentWrapperId);
+      }
+
+      function finalizeSection(wrapperId) {
+        var wrapper = document.getElementById(wrapperId);
+        if (!wrapper || salaryUiBusy) return;
+        var button = wrapper.querySelector(".btn-finalize");
+        button.disabled = true;
+        button.innerText = "서버 확인 중...";
+        requestSalaryPreview(wrapperId, function(preview) {
+          if (!preview) { button.disabled = false; button.innerText = "정산 확정 저장"; return; }
+          if (!confirm(wrapper.dataset.teacher + " 원장님의 " + salaryYmLabel(wrapper.dataset.ym) + " 급여를 " + Number(preview.finalAmount).toLocaleString() + "원으로 확정할까요?")) {
+            button.disabled = false; button.innerText = "정산 확정 저장"; return;
+          }
+          setSalaryUiBusy(true);
+          button.innerText = "확정 저장 중...";
+          var requestId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : "SALREQ-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+          google.script.run.withSuccessHandler(function(result) {
+            setSalaryUiBusy(false);
+            button.innerText = "확정 완료";
+            alert("정산이 확정되었습니다. 확정액: " + Number(result.finalAmount).toLocaleString() + "원");
+            salaryAdminInitialized = false;
+            fetchAllData();
+          }).withFailureHandler(function(err) {
+            setSalaryUiBusy(false);
+            button.disabled = false;
+            button.innerText = "정산 확정 저장";
+            alert(salaryActionableError(err, "급여 확정"));
+          }).finalizeSalarySettlement({
+            ym: preview.ym,
+            teacherId: preview.teacher.id,
+            previewToken: preview.previewToken,
+            expectedFinalAmount: preview.finalAmount,
+            requestId: requestId,
+            exclusions: preview.exclusions || [],
+            adjustments: preview.adjustments || []
+          });
+        }, false, function() { button.disabled = false; button.innerText = "정산 확정 저장"; }, true);
+      }
+
+</script>

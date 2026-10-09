@@ -1,0 +1,140 @@
+<style>
+  .student-info-link{appearance:none;border:0;background:transparent;color:#174ea6;font:inherit;font-weight:800;padding:0;cursor:pointer;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+  .student-info-link:hover{color:#0b57d0}.student-info-link:focus-visible{outline:2px solid #1a73e8;outline-offset:3px;border-radius:3px}
+  .student-info-common-overlay{display:none;position:fixed;inset:0;z-index:10020;box-sizing:border-box;overflow:auto;background:rgba(20,31,48,.54);align-items:center;justify-content:center;padding:18px}
+  .student-info-common-box{box-sizing:border-box;width:680px;max-width:calc(100vw - 36px);max-height:calc(100vh - 36px);overflow-x:hidden;overflow-y:auto;margin:auto;background:#fff;border-radius:14px;padding:20px;box-shadow:0 18px 55px rgba(0,0,0,.28);color:#273444}
+  .student-info-common-box *{box-sizing:border-box}
+  .student-info-common-head{display:flex;align-items:center;border-bottom:1px solid #e5e9ef;padding:2px 2px 14px;margin-bottom:14px}
+  .student-info-common-title{font-size:16px;font-weight:900;color:#273444;margin-right:auto}
+  .student-info-common-close{border:0;border-radius:6px;background:#eef1f5;color:#4d5968;font-weight:900;padding:7px 11px;cursor:pointer}
+  .student-info-common-table{table-layout:fixed;width:100%;border-collapse:separate;border-spacing:0;margin:0;background:#fff;border:1px solid #e1e7ef;border-radius:10px;overflow:hidden}
+  .student-info-common-table th{background:#f3f6fb;color:#42526a;padding:10px 16px;text-align:left!important;width:34%;font-size:12px;line-height:1.35;border-bottom:1px solid #e7ebf0;vertical-align:middle}
+  .student-info-common-table td{padding:10px 18px;color:#263238;text-align:left!important;border-bottom:1px solid #e7ebf0;white-space:normal;overflow-wrap:anywhere;word-break:keep-all;font-weight:600;font-size:12px;line-height:1.35;vertical-align:middle}
+  .student-info-common-table tr:last-child th,.student-info-common-table tr:last-child td{border-bottom:0}
+  .student-info-common-history-open{width:100%;margin-top:14px;border:1px solid #1a73e8;background:#e8f0fe;color:#174ea6;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:12px;font-weight:900}
+  .student-info-common-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:14px}
+  .student-info-common-actions button,.student-info-common-history-actions button{border:1px solid #aecbfa;background:#e8f0fe;color:#174ea6;border-radius:6px;padding:7px 10px;cursor:pointer;font-weight:800}
+  .student-info-common-history-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:#174ea6;font-weight:900}
+  .student-info-common-history-actions{display:flex;gap:6px}.student-info-common-history-wrap{max-height:330px;overflow:auto;border:1px solid #e0e0e0;border-radius:6px;background:#fff}
+  .student-info-common-history-table{width:100%;min-width:650px;border-collapse:collapse;font-size:11px}.student-info-common-history-table th{position:sticky;top:0;padding:7px 6px;background:#f3f6fa;z-index:2}.student-info-common-history-table td{padding:7px 6px;text-align:center;white-space:nowrap;border-bottom:1px solid #edf0f4}
+  .student-info-common-history-table td.memo{max-width:180px;overflow:hidden;text-overflow:ellipsis;text-align:left}.student-info-common-message{padding:34px 12px;text-align:center;color:#5f6368}
+  @media(max-width:620px){.student-info-common-overlay{padding:8px;align-items:flex-start}.student-info-common-box{width:100%;max-width:100%;max-height:calc(100vh - 16px);padding:14px}.student-info-common-head{padding-bottom:11px;margin-bottom:11px}.student-info-common-table th{width:38%;padding:9px 10px}.student-info-common-table td{padding:9px 12px}.student-info-common-history-head{align-items:flex-start;gap:8px;flex-direction:column}}
+  @media print{.student-info-link{color:inherit!important;text-decoration:none!important}.student-info-common-overlay{display:none!important}}
+</style>
+<div id="studentInfoCommonModal" class="student-info-common-overlay" role="dialog" aria-modal="true" aria-labelledby="studentInfoCommonTitle" onclick="if(event.target===this)closeStudentInfoModal()">
+  <div class="student-info-common-box">
+    <div class="student-info-common-head">
+      <span id="studentInfoCommonTitle" class="student-info-common-title">👤 학생 상세 정보</span>
+      <button id="studentInfoCommonClose" type="button" class="student-info-common-close" onclick="closeStudentInfoModal()" aria-label="학생 상세정보 닫기">✕</button>
+    </div>
+    <div id="studentInfoCommonLoading" class="student-info-common-message" style="display:none">학생 정보를 불러오는 중입니다...</div>
+    <div id="studentInfoCommonError" class="student-info-common-message" style="display:none;color:#b3261e"></div>
+    <div id="studentInfoCommonView">
+      <table class="student-info-common-table">
+        <tr><th>이름</th><td id="studentInfoCommonName"></td></tr>
+        <tr><th>학년/학번</th><td id="studentInfoCommonGrade"></td></tr>
+        <tr><th>담당 선생님</th><td id="studentInfoCommonTeacher"></td></tr>
+        <tr><th>기본 수강료</th><td id="studentInfoCommonFee" style="color:#1a73e8;font-weight:900"></td></tr>
+        <tr><th>수납 기준일</th><td id="studentInfoCommonBaseDay"></td></tr>
+        <tr><th>최초 등원일</th><td id="studentInfoCommonFirstDate"></td></tr>
+        <tr><th>퇴원일</th><td id="studentInfoCommonExitDate"></td></tr>
+        <tr><th>형제 관계</th><td id="studentInfoCommonRelation"></td></tr>
+        <tr><th>현재 상태</th><td id="studentInfoCommonStatus"></td></tr>
+        <tr><th>수강 형태</th><td id="studentInfoCommonCourseMode"></td></tr>
+      </table>
+      <button id="studentInfoCommonHistoryOpen" type="button" class="student-info-common-history-open" onclick="openStudentPaymentHistoryView()">💳 전체 납부기록 보기</button>
+      <div class="student-info-common-actions"><button type="button" onclick="closeStudentInfoModal()">닫기</button></div>
+    </div>
+    <div id="studentInfoCommonHistoryView" style="display:none">
+      <div class="student-info-common-history-head"><span>전체 납부기록 <small id="studentInfoCommonHistoryCount"></small></span><div class="student-info-common-history-actions"><button type="button" onclick="showStudentInfoView()">← 학생정보</button><button type="button" onclick="reloadStudentPaymentHistory()">새로고침</button></div></div>
+      <div id="studentInfoCommonHistory" class="student-info-common-history-wrap"><div class="student-info-common-message">조회 버튼을 누르면 전체 납부기록을 불러옵니다.</div></div>
+      <div class="student-info-common-actions"><button type="button" onclick="closeStudentInfoModal()">닫기</button></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var state={studentId:"",requestVersion:0,historyLoadedId:"",history:[],canViewHistory:false,canEditHistory:false,returnFocus:null};
+  function el(id){return document.getElementById(id)}
+  function esc(value){return String(value==null?"":value).replace(/[&<>"']/g,function(ch){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]})}
+  function text(id,value,fallback){el(id).textContent=String(value==null||value===""?(fallback||"-"):value)}
+  function money(value){var number=Number(String(value==null?"":value).replace(/,/g,""));return isFinite(number)?number.toLocaleString()+"원":"-"}
+  function setBusy(busy,message){el("studentInfoCommonLoading").style.display=busy?"block":"none";el("studentInfoCommonLoading").textContent=message||"학생 정보를 불러오는 중입니다...";el("studentInfoCommonView").style.display=busy?"none":"block";el("studentInfoCommonError").style.display="none"}
+  function render(data,options){
+    options=options||{};data=data||{};
+    text("studentInfoCommonName",data.name);text("studentInfoCommonGrade",data.grade);text("studentInfoCommonTeacher",data.teacher);
+    el("studentInfoCommonFee").textContent=money(data.fee);
+    text("studentInfoCommonBaseDay",data.baseDay?"매월 "+data.baseDay+"일":"-");
+    text("studentInfoCommonFirstDate",data.firstDate||data.asd);text("studentInfoCommonExitDate",data.exitDateFull||data.exitDate);
+    text("studentInfoCommonRelation",data.relName);text("studentInfoCommonStatus",data.status);text("studentInfoCommonCourseMode",data.courseMode,"정규");
+    state.canViewHistory=options.canViewPaymentHistory!=null?!!options.canViewPaymentHistory:!!data.canViewPaymentHistory;
+    state.canEditHistory=state.canViewHistory&&typeof window.openEditModal==="function";
+    el("studentInfoCommonHistoryOpen").style.display=state.canViewHistory?"block":"none";
+    setBusy(false);el("studentInfoCommonView").style.display="block";el("studentInfoCommonHistoryView").style.display="none";
+    el("studentInfoCommonTitle").textContent="👤 학생 상세 정보";el("studentInfoCommonHistoryCount").textContent="";
+    el("studentInfoCommonHistory").innerHTML='<div class="student-info-common-message">조회 버튼을 누르면 전체 납부기록을 불러옵니다.</div>';
+  }
+  function showError(message){
+    el("studentInfoCommonLoading").style.display="none";el("studentInfoCommonView").style.display="none";el("studentInfoCommonHistoryView").style.display="none";
+    el("studentInfoCommonError").style.display="block";el("studentInfoCommonError").textContent=message||"학생 정보를 확인할 수 없습니다.";
+  }
+  function open(studentId,seed,options){
+    studentId=String(studentId||"").trim();if(!studentId)return;
+    state.studentId=studentId;state.requestVersion++;state.historyLoadedId="";state.history=[];state.returnFocus=document.activeElement;
+    el("studentInfoCommonModal").style.display="flex";setBusy(true);
+    setTimeout(function(){el("studentInfoCommonClose").focus()},0);
+    if(seed){render(seed,options);return}
+    var requestVersion=state.requestVersion;
+    google.script.run.withSuccessHandler(function(data){
+      if(requestVersion!==state.requestVersion||studentId!==state.studentId)return;
+      if(!data){showError("등록된 학생 정보를 찾을 수 없습니다. 목록을 새로고침해주세요.");return}
+      render(data,options);
+    }).withFailureHandler(function(error){
+      if(requestVersion!==state.requestVersion||studentId!==state.studentId)return;
+      showError((error&&error.message)||String(error||"학생 정보를 불러오지 못했습니다."));
+    }).getStudentInfoModalData(studentId);
+  }
+  function close(){
+    state.requestVersion++;state.studentId="";state.historyLoadedId="";state.history=[];
+    el("studentInfoCommonModal").style.display="none";
+    if(state.returnFocus&&typeof state.returnFocus.focus==="function")state.returnFocus.focus();
+    state.returnFocus=null;
+  }
+  function showInfo(){state.requestVersion++;el("studentInfoCommonTitle").textContent="👤 학생 상세 정보";el("studentInfoCommonHistoryView").style.display="none";el("studentInfoCommonView").style.display="block"}
+  function openHistory(){
+    if(!state.studentId||!state.canViewHistory)return;
+    el("studentInfoCommonTitle").textContent="💳 전체 납부기록";el("studentInfoCommonView").style.display="none";el("studentInfoCommonHistoryView").style.display="block";
+    if(state.historyLoadedId===state.studentId)return;loadHistory(state.studentId,false);
+  }
+  function loadHistory(studentId,preserve){
+    studentId=String(studentId||"").trim();if(!studentId)return;
+    var requestVersion=++state.requestVersion,box=el("studentInfoCommonHistory");
+    if(!preserve)box.innerHTML='<div class="student-info-common-message">전체 납부기록을 불러오는 중입니다...</div>';
+    google.script.run.withSuccessHandler(function(raw){
+      if(requestVersion!==state.requestVersion||studentId!==state.studentId)return;
+      var rows=[];try{rows=typeof raw==="string"?JSON.parse(raw):raw}catch(ignore){}
+      renderHistory(Array.isArray(rows)?rows:[]);
+    }).withFailureHandler(function(error){
+      if(requestVersion!==state.requestVersion||studentId!==state.studentId)return;
+      box.innerHTML='<div class="student-info-common-message" style="color:#b3261e">조회 실패: '+esc((error&&error.message)||error)+'</div>';
+    }).getPaymentHistoryForEdit(studentId);
+  }
+  function renderHistory(rows){
+    state.history=rows;state.historyLoadedId=state.studentId;el("studentInfoCommonHistoryCount").textContent="("+rows.length+"건)";
+    if(!rows.length){el("studentInfoCommonHistory").innerHTML='<div class="student-info-common-message">등록된 납부기록이 없습니다.</div>';return}
+    var actionHead=state.canEditHistory?"<th></th>":"";
+    var body=rows.map(function(item,index){var amount=Number(String(item.amount==null?"":item.amount).replace(/,/g,""))||0;var action=state.canEditHistory?'<td><button type="button" onclick="openStudentHistoryPayment('+index+')">수정</button></td>':"";return"<tr><td>"+esc(item.date||"-")+"</td><td>"+esc(item.month||"-")+"</td><td>"+esc(item.type||"수강료")+"</td><td>"+amount.toLocaleString()+"원</td><td>"+esc(item.method||"-")+'</td><td class="memo" title="'+esc(item.memo||"")+'">'+esc(item.memo||"-")+"</td>"+action+"</tr>"}).join("");
+    el("studentInfoCommonHistory").innerHTML='<table class="student-info-common-history-table"><thead><tr><th>납부일</th><th>귀속월</th><th>항목</th><th>금액</th><th>방식</th><th>메모</th>'+actionHead+"</tr></thead><tbody>"+body+"</tbody></table>";
+  }
+  function editHistory(index){var item=state.history[Number(index)];if(!item||!state.canEditHistory)return;item.fullDate=item.fullDate||item.date||"";window.openEditModal(item)}
+  window.StudentInfoModal={open:open,close:close,showInfo:showInfo,openHistory:openHistory,reload:function(){if(state.studentId)loadHistory(state.studentId,false)},editHistory:editHistory};
+  document.addEventListener("click",function(event){var target=event.target.closest&&event.target.closest("[data-student-modal-id]");if(!target||target.closest("#studentInfoCommonModal"))return;var id=target.getAttribute("data-student-modal-id");if(!id)return;event.preventDefault();event.stopPropagation();open(id)});
+  document.addEventListener("keydown",function(event){if(event.key==="Escape"&&el("studentInfoCommonModal").style.display==="flex"){event.preventDefault();close();return}var target=event.target.closest&&event.target.closest("[data-student-modal-id]");if(target&&(event.key==="Enter"||event.key===" ")){event.preventDefault();target.click()}});
+})();
+function showStudentInfo(data){var canView=!!(window.dashboardAccess&&dashboardAccess.canEditPayments);return StudentInfoModal.open(data&&data.studentId,data,{canViewPaymentHistory:canView})}
+function closeStudentInfoModal(){return StudentInfoModal.close()}
+function openStudentPaymentHistoryView(){return StudentInfoModal.openHistory()}
+function showStudentInfoView(){return StudentInfoModal.showInfo()}
+function reloadStudentPaymentHistory(){return StudentInfoModal.reload()}
+function openStudentHistoryPayment(index){return StudentInfoModal.editHistory(index)}
+</script>
