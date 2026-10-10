@@ -250,6 +250,43 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .cash-receipt-history-detail { margin: 0; overflow-wrap: anywhere; color: #536176; font-size: 12px; }
 .cash-receipt-history-meta { color: #8791a2; font-size: 11px; white-space: nowrap; }
 
+.salary-eyebrow { color: #6d3db1; }
+.salary-action-button { min-height: 42px; padding: 0 17px; border: 0; border-radius: 10px; color: #fff; background: #7048ad; font-weight: 850; box-shadow: 0 8px 18px rgba(91,65,145,0.2); }
+.salary-action-button:hover { background: #5b368f; }
+.salary-kpis { grid-template-columns: repeat(4, 1fr); }
+.salary-panel-header { align-items: center; }
+.salary-panel-title { color: var(--navy); font-size: 14px; white-space: nowrap; }
+.salary-batch-form { display: grid; grid-template-columns: 0.85fr 0.85fr 1.5fr auto; align-items: end; gap: 14px; padding: 20px; }
+.salary-filter-toolbar { align-items: center; }
+.salary-filter-toolbar .search-wrap { min-width: 230px; }
+.salary-table { min-width: 1080px; }
+.salary-teacher-name { color: #34204f !important; font-weight: 850; }
+.salary-balance-cell { color: #8b4c00 !important; font-weight: 850; }
+.salary-status { display: inline-flex; min-width: 64px; justify-content: center; padding: 5px 9px; border-radius: 999px; color: #7a4c00; background: #fff1cf; font-size: 11px; font-weight: 850; }
+.salary-status.status-지급완료 { color: #126c3d; background: #e5f7ec; }
+.salary-status.status-취소 { color: #8a3940; background: #f8e7e9; }
+.salary-status.status-초과지급 { color: #6d3db1; background: #f0e9fa; }
+.salary-cancelled-row td { color: #9aa1ad !important; background: #fafafa; }
+.salary-row-actions { display: flex; gap: 7px; }
+.salary-adjust-button { color: #7048ad; border-color: #cbbce0; background: #f7f2fd; }
+.salary-health { display: inline-flex; margin-left: auto; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 850; white-space: nowrap; }
+.salary-health.healthy { color: #126c3d; background: #e5f7ec; }
+.salary-health.warning { color: #a13a32; background: #fde9e7; }
+.salary-audit-list { display: grid; }
+.salary-audit-row { display: grid; grid-template-columns: minmax(180px,0.8fr) minmax(220px,1.4fr) auto; align-items: center; gap: 14px; padding: 15px 18px; border-top: 1px solid #edf0f4; }
+.salary-audit-row:first-child { border-top: 0; }
+.salary-audit-name { color: var(--navy); }
+.salary-audit-action { display: inline-flex; margin-left: 8px; padding: 4px 8px; border-radius: 999px; color: #603b92; background: #f0e9fa; font-size: 10px; font-weight: 850; }
+.salary-audit-memo { margin: 0; color: #5f6d82; font-size: 12px; }
+.salary-audit-meta { color: #8791a2; font-size: 11px; white-space: nowrap; }
+.salary-modal .request-form-grid { padding-bottom: 18px; }
+.salary-current-values { grid-column: 1 / -1; margin: 0; padding: 12px 14px; border-radius: 10px; color: #593781; background: #f6f1fc; font-size: 13px; font-weight: 750; }
+.salary-ledger-modal { width: min(100%, 980px); }
+.salary-ledger-summary { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; padding: 20px 24px 0; }
+.salary-ledger-summary .stat-card { min-height: 92px; padding: 17px; }
+.salary-ledger-summary .stat-value { font-size: 20px; }
+.salary-ledger-table-wrap { margin: 18px 24px 0; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+
 .statistics-eyebrow { color: #0f7b75; }
 .statistics-control-panel { overflow: visible; }
 .statistics-controls { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) auto; align-items: end; gap: 14px; padding: 20px; }
@@ -337,6 +374,12 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .cash-receipt-add-form { grid-template-columns: 1fr; }
   .cash-receipt-history-row { grid-template-columns: 1fr; gap: 7px; }
   .cash-receipt-history-meta { white-space: normal; }
+  .salary-kpis { grid-template-columns: 1fr 1fr; }
+  .salary-batch-form { grid-template-columns: 1fr; }
+  .salary-audit-row { grid-template-columns: 1fr; gap: 7px; }
+  .salary-audit-meta { white-space: normal; }
+  .salary-ledger-summary { grid-template-columns: 1fr 1fr; padding: 16px 18px 0; }
+  .salary-ledger-table-wrap { margin: 14px 18px 0; }
   .statistics-controls { grid-template-columns: 1fr; }
   .statistics-kpis { grid-template-columns: 1fr 1fr; }
   .statistics-dimension-grid { grid-template-columns: 1fr; }
@@ -352,4 +395,5 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .request-toolbar { align-items: stretch; }
   .request-toolbar-copy { margin-bottom: 4px; }
   .statistics-kpis { grid-template-columns: 1fr; }
+  .salary-kpis, .salary-ledger-summary { grid-template-columns: 1fr; }
 }

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:security": "node tests/repository-security.test.cjs",
-    "test": "node tests/repository-security.test.cjs && node tests/static-audit.cjs && node tests/p2-integrity.test.cjs && node tests/glossary.test.cjs && node tests/supabase-cash-receipt.test.cjs && node tests/supabase-statistics.test.cjs"
+    "test": "node tests/repository-security.test.cjs && node tests/static-audit.cjs && node tests/p2-integrity.test.cjs && node tests/glossary.test.cjs && node tests/supabase-cash-receipt.test.cjs && node tests/supabase-statistics.test.cjs && node tests/supabase-salary.test.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3"
