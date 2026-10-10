@@ -250,6 +250,23 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .cash-receipt-history-detail { margin: 0; overflow-wrap: anywhere; color: #536176; font-size: 12px; }
 .cash-receipt-history-meta { color: #8791a2; font-size: 11px; white-space: nowrap; }
 
+.statistics-eyebrow { color: #0f7b75; }
+.statistics-control-panel { overflow: visible; }
+.statistics-controls { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) auto; align-items: end; gap: 14px; padding: 20px; }
+.statistics-controls .field-label { margin-bottom: 7px; }
+.statistics-source-note { margin: 0; padding: 13px 20px; border-top: 1px solid var(--line); color: #64748b; background: #f8fafc; font-size: 12px; line-height: 1.55; }
+.statistics-kpis { grid-template-columns: repeat(4, 1fr); }
+.statistics-kpis .stat-card { min-height: 104px; padding: 18px; }
+.statistics-kpis .stat-value { font-size: 21px; }
+.statistics-panel-header { align-items: center; }
+.statistics-panel-title { color: var(--navy); font-size: 14px; white-space: nowrap; }
+.statistics-table th, .statistics-table td { padding-right: 14px; padding-left: 14px; }
+.statistics-number { text-align: right; font-variant-numeric: tabular-nums; }
+.outstanding-cell { color: #b33b32 !important; font-weight: 850; }
+.statistics-dimension-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.statistics-dimension-grid .student-panel { min-width: 0; }
+.statistics-dimension-grid .statistics-table { min-width: 430px; }
+
 .payment-request-modal { width: min(100%, 760px); }
 .student-request-modal { width: min(100%, 820px); }
 .request-form { padding: 0; }
@@ -320,6 +337,9 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .cash-receipt-add-form { grid-template-columns: 1fr; }
   .cash-receipt-history-row { grid-template-columns: 1fr; gap: 7px; }
   .cash-receipt-history-meta { white-space: normal; }
+  .statistics-controls { grid-template-columns: 1fr; }
+  .statistics-kpis { grid-template-columns: 1fr 1fr; }
+  .statistics-dimension-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 460px) {
@@ -331,4 +351,5 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .request-grid { grid-template-columns: 1fr; }
   .request-toolbar { align-items: stretch; }
   .request-toolbar-copy { margin-bottom: 4px; }
+  .statistics-kpis { grid-template-columns: 1fr; }
 }

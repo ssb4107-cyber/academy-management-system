@@ -61,6 +61,12 @@ const state = {
   cashReceiptRows: [],
   cashReceiptChanges: [],
   cashReceiptReady: false,
+  statisticsOverview: null,
+  statisticsData: null,
+  statisticsStart: "",
+  statisticsEnd: "",
+  statisticsBasis: "PAY_DATE",
+  statisticsReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -199,6 +205,7 @@ function renderApp(sessionData) {
   const vacationTab = element("button", "view-tab", "휴가 관리");
   const siblingTab = element("button", "view-tab", "형제 관리");
   const cashReceiptTab = element("button", "view-tab", "현금영수증");
+  const statisticsTab = element("button", "view-tab", "기간 통계");
   studentTab.id = "student-tab";
   paymentTab.id = "payment-tab";
   requestTab.id = "request-tab";
@@ -206,6 +213,7 @@ function renderApp(sessionData) {
   vacationTab.id = "vacation-tab";
   siblingTab.id = "sibling-tab";
   cashReceiptTab.id = "cash-receipt-tab";
+  statisticsTab.id = "statistics-tab";
   studentTab.type = "button";
   paymentTab.type = "button";
   requestTab.type = "button";
@@ -213,8 +221,10 @@ function renderApp(sessionData) {
   vacationTab.type = "button";
   siblingTab.type = "button";
   cashReceiptTab.type = "button";
+  statisticsTab.type = "button";
   cashReceiptTab.hidden = state.profile.role !== "SUPER_ADMIN";
-  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab, cashReceiptTab);
+  statisticsTab.hidden = state.profile.role !== "SUPER_ADMIN";
+  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab, cashReceiptTab, statisticsTab);
   main.append(viewSwitcher);
 
   const studentView = element("div", "view-section");
@@ -296,7 +306,9 @@ function renderApp(sessionData) {
   siblingView.hidden = true;
   const cashReceiptView = createCashReceiptView();
   cashReceiptView.hidden = true;
-  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView, cashReceiptView);
+  const statisticsView = createStatisticsView();
+  statisticsView.hidden = true;
+  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView, cashReceiptView, statisticsView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -327,6 +339,7 @@ function renderApp(sessionData) {
     vacationView.hidden = true;
     siblingView.hidden = true;
     cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
     studentTab.classList.add("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
@@ -334,6 +347,7 @@ function renderApp(sessionData) {
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
     cashReceiptTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
     showNotice("");
   });
   paymentTab.addEventListener("click", async () => {
@@ -344,6 +358,7 @@ function renderApp(sessionData) {
     vacationView.hidden = true;
     siblingView.hidden = true;
     cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
     paymentTab.classList.add("active");
     studentTab.classList.remove("active");
     requestTab.classList.remove("active");
@@ -351,6 +366,7 @@ function renderApp(sessionData) {
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
     cashReceiptTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
     showNotice("");
     if (!state.paymentReady) {
       const ready = await loadPaymentOverview();
@@ -365,6 +381,7 @@ function renderApp(sessionData) {
     vacationView.hidden = true;
     siblingView.hidden = true;
     cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
     requestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
@@ -372,6 +389,7 @@ function renderApp(sessionData) {
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
     cashReceiptTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
     showNotice("");
     await loadPaymentRequests();
   });
@@ -383,6 +401,7 @@ function renderApp(sessionData) {
     vacationView.hidden = true;
     siblingView.hidden = true;
     cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
     studentRequestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
@@ -390,6 +409,7 @@ function renderApp(sessionData) {
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
     cashReceiptTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
     showNotice("");
     await loadStudentRequests();
   });
@@ -401,6 +421,7 @@ function renderApp(sessionData) {
     vacationView.hidden = false;
     siblingView.hidden = true;
     cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
     vacationTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
@@ -408,6 +429,7 @@ function renderApp(sessionData) {
     studentRequestTab.classList.remove("active");
     siblingTab.classList.remove("active");
     cashReceiptTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
     showNotice("");
     await loadVacationWorkspace();
   });
@@ -419,6 +441,7 @@ function renderApp(sessionData) {
     vacationView.hidden = true;
     siblingView.hidden = false;
     cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
     siblingTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
@@ -426,6 +449,7 @@ function renderApp(sessionData) {
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
     cashReceiptTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
     showNotice("");
     await loadSiblingWorkspace();
   });
@@ -438,6 +462,7 @@ function renderApp(sessionData) {
     vacationView.hidden = true;
     siblingView.hidden = true;
     cashReceiptView.hidden = false;
+    statisticsView.hidden = true;
     cashReceiptTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
@@ -445,8 +470,30 @@ function renderApp(sessionData) {
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
     showNotice("");
     await loadCashReceiptWorkspace();
+  });
+  statisticsTab.addEventListener("click", async () => {
+    if (state.profile.role !== "SUPER_ADMIN") return;
+    studentView.hidden = true;
+    paymentView.hidden = true;
+    requestView.hidden = true;
+    studentRequestView.hidden = true;
+    vacationView.hidden = true;
+    siblingView.hidden = true;
+    cashReceiptView.hidden = true;
+    statisticsView.hidden = false;
+    statisticsTab.classList.add("active");
+    studentTab.classList.remove("active");
+    paymentTab.classList.remove("active");
+    requestTab.classList.remove("active");
+    studentRequestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
+    siblingTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
+    showNotice("");
+    if (!state.statisticsReady) await loadStatisticsOverview();
   });
 }
 
@@ -1341,6 +1388,289 @@ async function openStudentRequestModal(studentId = null) {
     showNotice(isEdit ? "학생 수정 승인 요청을 등록했습니다." : "학생 등록 승인 요청을 등록했습니다.", "success");
   });
   name.focus();
+}
+
+function createStatisticsTablePanel(titleText, copyText, tableId, columns) {
+  const panel = element("section", "student-panel statistics-panel");
+  const toolbar = element("div", "toolbar statistics-panel-header");
+  toolbar.append(element("strong", "statistics-panel-title", titleText), element("p", "request-toolbar-copy", copyText));
+  panel.append(toolbar);
+  const wrap = element("div", "table-wrap");
+  const table = element("table", "student-table statistics-table");
+  const thead = element("thead");
+  const head = element("tr");
+  columns.forEach((label) => head.append(element("th", "", label)));
+  thead.append(head);
+  const tbody = element("tbody");
+  tbody.id = tableId;
+  table.append(thead, tbody);
+  wrap.append(table);
+  panel.append(wrap);
+  return panel;
+}
+
+function createStatisticsView() {
+  const view = element("div", "view-section statistics-view");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow statistics-eyebrow", "PERIOD ANALYTICS"));
+  title.append(element("h1", "page-title", "기간별 통계"));
+  title.append(element("p", "page-copy", "저장된 월별 스냅샷과 현재 수납·급여 원장을 함께 계산합니다."));
+  const actions = element("div", "heading-actions");
+  const exportButton = element("button", "quiet-button", "월별 CSV 저장");
+  exportButton.id = "statistics-export";
+  exportButton.type = "button";
+  exportButton.disabled = true;
+  exportButton.addEventListener("click", downloadStatisticsCsv);
+  actions.append(exportButton);
+  heading.append(title, actions);
+  view.append(heading);
+
+  const controlPanel = element("section", "student-panel statistics-control-panel");
+  const form = element("form", "statistics-controls");
+  const startField = element("label", "request-field");
+  startField.append(element("span", "field-label", "시작 월"));
+  const startInput = element("input", "text-input");
+  startInput.id = "statistics-start";
+  startInput.type = "month";
+  startInput.required = true;
+  startField.append(startInput);
+  const endField = element("label", "request-field");
+  endField.append(element("span", "field-label", "종료 월"));
+  const endInput = element("input", "text-input");
+  endInput.id = "statistics-end";
+  endInput.type = "month";
+  endInput.required = true;
+  endField.append(endInput);
+  const basisField = element("label", "request-field");
+  basisField.append(element("span", "field-label", "매출 집계 기준"));
+  const basis = element("select", "text-input");
+  basis.id = "statistics-basis";
+  [["PAY_DATE", "실제 납부일"], ["ATTRIBUTION", "수납 귀속월"]].forEach(([value, label]) => {
+    const option = element("option", "", label);
+    option.value = value;
+    basis.append(option);
+  });
+  basisField.append(basis);
+  const runButton = element("button", "primary-action-button", "통계 조회");
+  runButton.id = "statistics-run";
+  runButton.type = "submit";
+  form.append(startField, endField, basisField, runButton);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    state.statisticsStart = startInput.value;
+    state.statisticsEnd = endInput.value;
+    state.statisticsBasis = basis.value;
+    await loadPeriodStatistics();
+  });
+  controlPanel.append(form);
+  const sourceNote = element("p", "statistics-source-note", "저장 자료 범위를 확인하고 있습니다…");
+  sourceNote.id = "statistics-source-note";
+  controlPanel.append(sourceNote);
+  view.append(controlPanel);
+
+  const stats = element("section", "stats-grid statistics-kpis");
+  [
+    ["총 수납액", "statistics-total-received", true],
+    ["예상 수강료", "statistics-expected", false],
+    ["수납률", "statistics-rate", false],
+    ["미수금", "statistics-outstanding", false],
+    ["월평균 재원생", "statistics-active", false],
+    ["완납 / 부분 / 미납", "statistics-status", false],
+    ["급여 지급액", "statistics-salary", false],
+    ["급여 지급 후", "statistics-after-salary", false],
+  ].forEach(([label, id, accent]) => {
+    const card = createStat(label, "-", accent);
+    card.querySelector(".stat-value").id = id;
+    stats.append(card);
+  });
+  view.append(stats);
+
+  view.append(createStatisticsTablePanel(
+    "월별 추이",
+    "수납 상태는 항상 귀속월을 기준으로 판단합니다.",
+    "statistics-month-rows",
+    ["월", "재원", "신규", "퇴원", "예상 수강료", "수강료 수납", "기타 수입", "총 수납", "수납률", "미수금", "급여 지급", "지급 후"]
+  ));
+
+  const dimensions = element("div", "statistics-dimension-grid");
+  dimensions.append(
+    createStatisticsTablePanel("원장별", "담당 학생과 수납 합계", "statistics-teacher-rows", ["원장", "학생-월", "예상", "수납"]),
+    createStatisticsTablePanel("학년별", "학년별 수납 분포", "statistics-grade-rows", ["학년", "학생-월", "예상", "수납"]),
+    createStatisticsTablePanel("결제수단별", "실제 결제수단 기준", "statistics-method-rows", ["결제수단", "건수", "수납액"]),
+    createStatisticsTablePanel("급여 원장별", "확정·지급·잔액", "statistics-salary-rows", ["원장", "확정", "지급", "잔액"])
+  );
+  view.append(dimensions);
+
+  view.append(createStatisticsTablePanel(
+    "미수금 상세",
+    "학생 이름을 누르면 동일한 학생 상세 정보가 열립니다.",
+    "statistics-receivable-rows",
+    ["귀속월", "학생", "학년", "담당", "상태", "예상", "수납", "미수금"]
+  ));
+  return view;
+}
+
+async function loadStatisticsOverview() {
+  const { data, error } = await supabase.rpc("get_statistics_overview");
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.statisticsOverview = data || {};
+  state.statisticsStart = data?.defaultStart || data?.availableStart || "";
+  state.statisticsEnd = data?.defaultEnd || data?.availableEnd || "";
+  state.statisticsReady = true;
+  const start = document.querySelector("#statistics-start");
+  const end = document.querySelector("#statistics-end");
+  [start, end].forEach((input) => {
+    if (!input) return;
+    input.min = data?.availableStart || "";
+    input.max = data?.availableEnd || "";
+  });
+  if (start) start.value = state.statisticsStart;
+  if (end) end.value = state.statisticsEnd;
+  const note = document.querySelector("#statistics-source-note");
+  if (note) note.textContent = `저장 범위 ${data?.availableStart || "-"} ~ ${data?.availableEnd || "-"} · 학생-월 ${Number(data?.studentFacts || 0).toLocaleString("ko-KR")}건 · 급여정산 ${Number(data?.salarySettlements || 0).toLocaleString("ko-KR")}건`;
+  await loadPeriodStatistics();
+}
+
+async function loadPeriodStatistics() {
+  if (!state.statisticsStart || !state.statisticsEnd) return;
+  const button = document.querySelector("#statistics-run");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "계산 중…";
+  }
+  const { data, error } = await supabase.rpc("get_period_statistics", {
+    p_start_month: state.statisticsStart,
+    p_end_month: state.statisticsEnd,
+    p_revenue_basis: state.statisticsBasis,
+  });
+  if (button) {
+    button.disabled = false;
+    button.textContent = "통계 조회";
+  }
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.statisticsData = data || {};
+  renderPeriodStatistics();
+  showNotice(`${state.statisticsStart} ~ ${state.statisticsEnd} 통계를 불러왔습니다.`, "success");
+}
+
+function setStatisticsValue(id, value) {
+  const target = document.querySelector(`#${id}`);
+  if (target) target.textContent = value;
+}
+
+function renderPeriodStatistics() {
+  const data = state.statisticsData || {};
+  const totals = data.totals || {};
+  setStatisticsValue("statistics-total-received", formatMoney(totals.totalReceived));
+  setStatisticsValue("statistics-expected", formatMoney(totals.expectedTuition));
+  setStatisticsValue("statistics-rate", `${Number(totals.collectionRate || 0).toLocaleString("ko-KR")}%`);
+  setStatisticsValue("statistics-outstanding", formatMoney(totals.outstanding));
+  setStatisticsValue("statistics-active", `${Number(totals.averageActiveStudents || 0).toLocaleString("ko-KR")}명`);
+  setStatisticsValue("statistics-status", `${Number(totals.fullPaid || 0).toLocaleString("ko-KR")} / ${Number(totals.partialPaid || 0).toLocaleString("ko-KR")} / ${Number(totals.unpaid || 0).toLocaleString("ko-KR")}`);
+  setStatisticsValue("statistics-salary", formatMoney(totals.salaryPaidAmount));
+  setStatisticsValue("statistics-after-salary", formatMoney(totals.afterSalaryAmount));
+  const exportButton = document.querySelector("#statistics-export");
+  if (exportButton) exportButton.disabled = !(data.months || []).length;
+
+  const monthRows = document.querySelector("#statistics-month-rows");
+  if (monthRows) {
+    monthRows.replaceChildren();
+    (data.months || []).forEach((item) => {
+      const row = element("tr");
+      [item.month, `${item.activeStudents || 0}명`, item.newStudents || 0, item.exitedStudents || 0,
+        formatMoney(item.expectedTuition), formatMoney(item.tuitionReceived), formatMoney(item.otherRevenue),
+        formatMoney(item.totalReceived), `${Number(item.collectionRate || 0).toLocaleString("ko-KR")}%`,
+        formatMoney(item.outstanding), formatMoney(item.salaryPaidAmount), formatMoney(item.afterSalaryAmount)]
+        .forEach((value, index) => row.append(element("td", index >= 4 ? "statistics-number" : "", value)));
+      monthRows.append(row);
+    });
+  }
+  renderStatisticsDimension("statistics-teacher-rows", data.teachers || [], "standard");
+  renderStatisticsDimension("statistics-grade-rows", data.grades || [], "standard");
+  renderStatisticsDimension("statistics-method-rows", data.methods || [], "method");
+  renderStatisticsDimension("statistics-salary-rows", data.salaries || [], "salary");
+
+  const receivableRows = document.querySelector("#statistics-receivable-rows");
+  if (receivableRows) {
+    receivableRows.replaceChildren();
+    const items = data.receivables || [];
+    if (!items.length) {
+      const row = element("tr");
+      const cell = element("td", "cash-receipt-empty", "선택 기간에 미수금이 없습니다.");
+      cell.colSpan = 8;
+      row.append(cell);
+      receivableRows.append(row);
+    } else {
+      items.slice(0, 300).forEach((item) => {
+        const row = element("tr");
+        row.append(element("td", "", item.month || "-"));
+        const nameCell = element("td");
+        const name = element("button", "student-link", item.name || "학생");
+        name.type = "button";
+        name.addEventListener("click", () => openStudent(item.studentId, name));
+        nameCell.append(name);
+        row.append(nameCell, element("td", "", item.grade || "-"), element("td", "", item.teacher || "-"),
+          element("td", "", item.status || "-"), element("td", "statistics-number", formatMoney(item.expected)),
+          element("td", "statistics-number", formatMoney(item.received)), element("td", "statistics-number outstanding-cell", formatMoney(item.outstanding)));
+        receivableRows.append(row);
+      });
+    }
+  }
+}
+
+function renderStatisticsDimension(id, rows, kind) {
+  const body = document.querySelector(`#${id}`);
+  if (!body) return;
+  body.replaceChildren();
+  if (!rows.length) {
+    const row = element("tr");
+    const cell = element("td", "cash-receipt-empty", "표시할 자료가 없습니다.");
+    cell.colSpan = 4;
+    row.append(cell);
+    body.append(row);
+    return;
+  }
+  rows.forEach((item) => {
+    const row = element("tr");
+    let values;
+    if (kind === "method") values = [item.name || "미지정", Number(item.paymentCount || 0).toLocaleString("ko-KR"), formatMoney(item.totalReceived)];
+    else if (kind === "salary") values = [item.name || "미지정", formatMoney(item.finalAmount), formatMoney(item.paidAmount), formatMoney(item.balanceAmount)];
+    else values = [item.name || "미지정", Number(item.activeStudents || 0).toLocaleString("ko-KR"), formatMoney(item.expectedTuition), formatMoney(item.totalReceived)];
+    values.forEach((value, index) => row.append(element("td", index ? "statistics-number" : "", value)));
+    body.append(row);
+  });
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
+function downloadStatisticsCsv() {
+  const months = state.statisticsData?.months || [];
+  if (!months.length) return;
+  const headers = ["월", "재원생", "신규", "퇴원", "예상수강료", "수강료수납", "기타수입", "총수납", "수납률", "미수금", "급여확정", "급여지급", "급여잔액", "급여지급후"];
+  const lines = [headers.map(csvCell).join(",")];
+  months.forEach((item) => lines.push([
+    item.month, item.activeStudents, item.newStudents, item.exitedStudents, item.expectedTuition,
+    item.tuitionReceived, item.otherRevenue, item.totalReceived, item.collectionRate, item.outstanding,
+    item.salaryFinalAmount, item.salaryPaidAmount, item.salaryBalanceAmount, item.afterSalaryAmount,
+  ].map(csvCell).join(",")));
+  const blob = new Blob(["\ufeff", lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = element("a");
+  link.href = url;
+  link.download = `기간통계_${state.statisticsStart}_${state.statisticsEnd}_${state.statisticsBasis}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function cashReceiptMonthLabels() {
@@ -2544,7 +2874,7 @@ function statusCell(status) {
 }
 
 function formatMoney(value) {
-  const digits = String(value || "").replace(/[^0-9-]/g, "");
+  const digits = String(value ?? "").replace(/[^0-9-]/g, "");
   if (!digits || Number.isNaN(Number(digits))) return value || "-";
   return `${Number(digits).toLocaleString("ko-KR")}원`;
 }
