@@ -225,6 +225,31 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .sibling-student-multiselect { height: 280px; padding: 8px; }
 .sibling-student-multiselect option { padding: 8px 10px; border-radius: 7px; }
 
+.cash-receipt-eyebrow { color: #9a5a12; }
+.cash-receipt-print-button { min-height: 42px; padding: 0 17px; border: 0; border-radius: 10px; color: #fff; background: #a65e15; font-weight: 850; box-shadow: 0 8px 18px rgba(166,94,21,0.2); }
+.cash-receipt-print-button:hover { background: #82470d; }
+.cash-receipt-toolbar { align-items: center; }
+.cash-receipt-toolbar-title { color: var(--navy); font-size: 14px; white-space: nowrap; }
+.cash-receipt-add-form { display: grid; grid-template-columns: 1.3fr 0.8fr 1fr auto; align-items: end; gap: 14px; padding: 20px; }
+.cash-receipt-add-form .text-input { margin-top: 7px; }
+.cash-receipt-inline-input { width: 100%; min-width: 120px; height: 36px; padding: 0 10px; border: 1px solid #d7dee9; border-radius: 8px; color: #35445b; background: #fff; outline: none; }
+.cash-receipt-inline-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(29,111,233,0.1); }
+.receipt-number-input { color: #145fc8; font-weight: 800; }
+.cash-receipt-actions { white-space: nowrap; }
+.cash-receipt-actions .danger-button { margin-left: 7px; }
+.cash-receipt-empty { padding: 42px !important; color: #7a8598 !important; text-align: center; }
+.receipt-print-only { display: none; text-align: center !important; }
+.receipt-print-check { width: 17px; height: 17px; margin: 0; accent-color: #111; }
+.cash-receipt-history-list { display: grid; }
+.cash-receipt-history-row { display: grid; grid-template-columns: minmax(170px,0.7fr) minmax(260px,1.4fr) auto; align-items: center; gap: 16px; padding: 15px 18px; border-top: 1px solid #edf0f4; }
+.cash-receipt-history-row:first-child { border-top: 0; }
+.cash-receipt-history-summary { display: flex; align-items: center; gap: 9px; }
+.cash-receipt-change-action { display: inline-flex; padding: 4px 8px; border-radius: 999px; color: #73521d; background: #fff1cf; font-size: 10px; font-weight: 850; white-space: nowrap; }
+.cash-receipt-change-action.action-remove { color: #a13a32; background: #fde9e7; }
+.cash-receipt-change-action.action-add { color: #126c3d; background: #e5f7ec; }
+.cash-receipt-history-detail { margin: 0; overflow-wrap: anywhere; color: #536176; font-size: 12px; }
+.cash-receipt-history-meta { color: #8791a2; font-size: 11px; white-space: nowrap; }
+
 .payment-request-modal { width: min(100%, 760px); }
 .student-request-modal { width: min(100%, 820px); }
 .request-form { padding: 0; }
@@ -244,6 +269,23 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .request-form-footer .primary-action-button { min-width: 140px; }
 .form-error { margin: 12px 26px 0; padding: 11px 13px; border-radius: 9px; color: #a61b1b; background: #fff0f0; font-size: 13px; }
 .form-warning { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid #f0d89c; border-radius: 10px; color: #74501a; background: #fff9e9; font-size: 12px; line-height: 1.45; }
+
+@media print {
+  @page { size: A4 portrait; margin: 13mm; }
+  body { background: #fff; }
+  .app-header, .view-switcher, .cash-receipt-view .page-heading, .cash-receipt-view .stats-grid,
+  .cash-receipt-add-panel, .cash-receipt-history-panel, .page-notice, .cash-receipt-actions { display: none !important; }
+  .content { width: 100%; padding: 0; }
+  .cash-receipt-view::before { content: "현금영수증 발급 대상자 명단"; display: block; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 3px solid #111; color: #111; font-size: 23px; font-weight: 900; text-align: center; }
+  .cash-receipt-list-panel { margin: 0; overflow: visible; border: 0; border-radius: 0; box-shadow: none; }
+  .cash-receipt-list-panel .table-wrap { overflow: visible; }
+  .cash-receipt-table { border: 2px solid #111; }
+  .cash-receipt-table th, .cash-receipt-table td { padding: 9px 6px; border: 1px solid #333; color: #111 !important; font-size: 11px; white-space: normal; }
+  .cash-receipt-table th { background: #e8e8e8 !important; print-color-adjust: exact; }
+  .receipt-print-only { display: table-cell !important; }
+  .cash-receipt-inline-input { min-width: 0; height: auto; padding: 0; border: 0; color: #111; background: transparent; font-size: 11px; font-weight: 700; text-align: center; box-shadow: none; }
+  .cash-receipt-inline-input::placeholder { color: transparent; }
+}
 
 @media (max-width: 760px) {
   .app-header { padding: 13px 18px; }
@@ -275,6 +317,9 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .sibling-group-list { grid-template-columns: 1fr; }
   .sibling-group-head { flex-direction: column; }
   .sibling-group-actions { justify-content: flex-start; }
+  .cash-receipt-add-form { grid-template-columns: 1fr; }
+  .cash-receipt-history-row { grid-template-columns: 1fr; gap: 7px; }
+  .cash-receipt-history-meta { white-space: normal; }
 }
 
 @media (max-width: 460px) {

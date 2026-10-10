@@ -57,6 +57,10 @@ const state = {
   siblingRequestCanApprove: false,
   siblingFocusStudentId: "",
   siblingReady: false,
+  cashReceiptStudents: [],
+  cashReceiptRows: [],
+  cashReceiptChanges: [],
+  cashReceiptReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -194,19 +198,23 @@ function renderApp(sessionData) {
   const studentRequestTab = element("button", "view-tab", "학생 요청");
   const vacationTab = element("button", "view-tab", "휴가 관리");
   const siblingTab = element("button", "view-tab", "형제 관리");
+  const cashReceiptTab = element("button", "view-tab", "현금영수증");
   studentTab.id = "student-tab";
   paymentTab.id = "payment-tab";
   requestTab.id = "request-tab";
   studentRequestTab.id = "student-request-tab";
   vacationTab.id = "vacation-tab";
   siblingTab.id = "sibling-tab";
+  cashReceiptTab.id = "cash-receipt-tab";
   studentTab.type = "button";
   paymentTab.type = "button";
   requestTab.type = "button";
   studentRequestTab.type = "button";
   vacationTab.type = "button";
   siblingTab.type = "button";
-  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab);
+  cashReceiptTab.type = "button";
+  cashReceiptTab.hidden = state.profile.role !== "SUPER_ADMIN";
+  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab, cashReceiptTab);
   main.append(viewSwitcher);
 
   const studentView = element("div", "view-section");
@@ -286,7 +294,9 @@ function renderApp(sessionData) {
   vacationView.hidden = true;
   const siblingView = createSiblingView();
   siblingView.hidden = true;
-  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView);
+  const cashReceiptView = createCashReceiptView();
+  cashReceiptView.hidden = true;
+  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView, cashReceiptView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -316,12 +326,14 @@ function renderApp(sessionData) {
     studentRequestView.hidden = true;
     vacationView.hidden = true;
     siblingView.hidden = true;
+    cashReceiptView.hidden = true;
     studentTab.classList.add("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
     showNotice("");
   });
   paymentTab.addEventListener("click", async () => {
@@ -331,12 +343,14 @@ function renderApp(sessionData) {
     studentRequestView.hidden = true;
     vacationView.hidden = true;
     siblingView.hidden = true;
+    cashReceiptView.hidden = true;
     paymentTab.classList.add("active");
     studentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
     showNotice("");
     if (!state.paymentReady) {
       const ready = await loadPaymentOverview();
@@ -350,12 +364,14 @@ function renderApp(sessionData) {
     studentRequestView.hidden = true;
     vacationView.hidden = true;
     siblingView.hidden = true;
+    cashReceiptView.hidden = true;
     requestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
     showNotice("");
     await loadPaymentRequests();
   });
@@ -366,12 +382,14 @@ function renderApp(sessionData) {
     studentRequestView.hidden = false;
     vacationView.hidden = true;
     siblingView.hidden = true;
+    cashReceiptView.hidden = true;
     studentRequestTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     vacationTab.classList.remove("active");
     siblingTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
     showNotice("");
     await loadStudentRequests();
   });
@@ -382,12 +400,14 @@ function renderApp(sessionData) {
     studentRequestView.hidden = true;
     vacationView.hidden = false;
     siblingView.hidden = true;
+    cashReceiptView.hidden = true;
     vacationTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     siblingTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
     showNotice("");
     await loadVacationWorkspace();
   });
@@ -398,14 +418,35 @@ function renderApp(sessionData) {
     studentRequestView.hidden = true;
     vacationView.hidden = true;
     siblingView.hidden = false;
+    cashReceiptView.hidden = true;
     siblingTab.classList.add("active");
     studentTab.classList.remove("active");
     paymentTab.classList.remove("active");
     requestTab.classList.remove("active");
     studentRequestTab.classList.remove("active");
     vacationTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
     showNotice("");
     await loadSiblingWorkspace();
+  });
+  cashReceiptTab.addEventListener("click", async () => {
+    if (state.profile.role !== "SUPER_ADMIN") return;
+    studentView.hidden = true;
+    paymentView.hidden = true;
+    requestView.hidden = true;
+    studentRequestView.hidden = true;
+    vacationView.hidden = true;
+    siblingView.hidden = true;
+    cashReceiptView.hidden = false;
+    cashReceiptTab.classList.add("active");
+    studentTab.classList.remove("active");
+    paymentTab.classList.remove("active");
+    requestTab.classList.remove("active");
+    studentRequestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
+    siblingTab.classList.remove("active");
+    showNotice("");
+    await loadCashReceiptWorkspace();
   });
 }
 
@@ -1300,6 +1341,298 @@ async function openStudentRequestModal(studentId = null) {
     showNotice(isEdit ? "학생 수정 승인 요청을 등록했습니다." : "학생 등록 승인 요청을 등록했습니다.", "success");
   });
   name.focus();
+}
+
+function cashReceiptMonthLabels() {
+  const now = new Date();
+  return [0, 1, 2].map((offset) => {
+    const value = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    return `${value.getMonth() + 1}월`;
+  });
+}
+
+function createCashReceiptView() {
+  const view = element("div", "view-section cash-receipt-view");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow cash-receipt-eyebrow", "CASH RECEIPT DIRECTORY"));
+  title.append(element("h1", "page-title", "현금영수증 발급 명단"));
+  title.append(element("p", "page-copy", "학생 원장의 발급번호와 입금자명을 그대로 관리하며, 모든 변경은 이력으로 남습니다."));
+  const actions = element("div", "heading-actions");
+  const printButton = element("button", "cash-receipt-print-button", "명단 인쇄 · PDF 저장");
+  printButton.type = "button";
+  printButton.addEventListener("click", () => window.print());
+  const refreshButton = element("button", "quiet-button", "새로고침");
+  refreshButton.type = "button";
+  refreshButton.addEventListener("click", loadCashReceiptWorkspace);
+  actions.append(printButton, refreshButton);
+  heading.append(title, actions);
+  view.append(heading);
+
+  const stats = element("section", "stats-grid");
+  const targetStat = createStat("발급 대상", "0명", true);
+  targetStat.querySelector(".stat-value").id = "cash-receipt-target-total";
+  const activeStat = createStat("현재 재원생", "0명");
+  activeStat.querySelector(".stat-value").id = "cash-receipt-active-total";
+  const changeStat = createStat("최근 변경 이력", "0건");
+  changeStat.querySelector(".stat-value").id = "cash-receipt-change-total";
+  stats.append(targetStat, activeStat, changeStat);
+  view.append(stats);
+
+  const addPanel = element("section", "student-panel cash-receipt-add-panel");
+  const addHeader = element("div", "toolbar cash-receipt-toolbar");
+  addHeader.append(
+    element("strong", "cash-receipt-toolbar-title", "신규 발급 대상자 추가"),
+    element("p", "request-toolbar-copy", "현재 재원 중이며 명단에 없는 학생만 선택됩니다.")
+  );
+  addPanel.append(addHeader);
+  const form = element("form", "cash-receipt-add-form");
+  const studentField = element("label", "request-field");
+  studentField.append(element("span", "field-label", "학생 선택"));
+  const studentSelect = element("select", "text-input");
+  studentSelect.id = "cash-receipt-student-select";
+  studentSelect.required = true;
+  studentField.append(studentSelect);
+  const payerField = element("label", "request-field");
+  payerField.append(element("span", "field-label", "입금자명"));
+  const payerInput = element("input", "text-input");
+  payerInput.id = "cash-receipt-payer";
+  payerInput.maxLength = 40;
+  payerInput.placeholder = "부모님 성함";
+  payerField.append(payerInput);
+  const numberField = element("label", "request-field");
+  numberField.append(element("span", "field-label", "발급용 번호"));
+  const numberInput = element("input", "text-input");
+  numberInput.id = "cash-receipt-number";
+  numberInput.maxLength = 30;
+  numberInput.placeholder = "010-0000-0000";
+  numberInput.required = true;
+  numberField.append(numberInput);
+  const addButton = element("button", "primary-action-button", "저장 · 추가");
+  addButton.type = "submit";
+  studentSelect.addEventListener("change", () => {
+    const selected = state.cashReceiptStudents.find((student) => student.studentId === studentSelect.value);
+    payerInput.value = selected?.payerName || "";
+    numberInput.value = selected?.parentPhone || "";
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const selected = state.cashReceiptStudents.find((student) => student.studentId === studentSelect.value);
+    if (!selected) return;
+    await saveCashReceiptTarget({
+      studentId: selected.studentId,
+      receiptNumber: numberInput.value,
+      payerName: payerInput.value,
+      version: selected.version,
+    }, addButton);
+  });
+  form.append(studentField, payerField, numberField, addButton);
+  addPanel.append(form);
+  view.append(addPanel);
+
+  const listPanel = element("section", "student-panel cash-receipt-list-panel");
+  const tableWrap = element("div", "table-wrap");
+  const table = element("table", "student-table cash-receipt-table");
+  const thead = element("thead");
+  const headRow = element("tr");
+  ["학년/학번", "학생명", "입금자명", "기준일", "현금영수증 번호"].forEach((labelText) => headRow.append(element("th", "", labelText)));
+  cashReceiptMonthLabels().forEach((labelText) => headRow.append(element("th", "receipt-print-only", labelText)));
+  headRow.append(element("th", "cash-receipt-actions", "관리"));
+  thead.append(headRow);
+  const tbody = element("tbody");
+  tbody.id = "cash-receipt-rows";
+  table.append(thead, tbody);
+  tableWrap.append(table);
+  listPanel.append(tableWrap);
+  view.append(listPanel);
+
+  const historyPanel = element("section", "student-panel cash-receipt-history-panel");
+  const historyToolbar = element("div", "toolbar cash-receipt-toolbar");
+  historyToolbar.append(
+    element("strong", "cash-receipt-toolbar-title", "최근 변경 이력"),
+    element("p", "request-toolbar-copy", "추가·수정·제외 시점과 처리 계정을 확인할 수 있습니다.")
+  );
+  historyPanel.append(historyToolbar);
+  const historyList = element("div", "cash-receipt-history-list");
+  historyList.id = "cash-receipt-history-list";
+  historyPanel.append(historyList);
+  view.append(historyPanel);
+  return view;
+}
+
+async function loadCashReceiptWorkspace() {
+  const { data, error } = await supabase.rpc("get_cash_receipt_workspace");
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.cashReceiptStudents = Array.isArray(data?.allStudents) ? data.allStudents : [];
+  state.cashReceiptRows = Array.isArray(data?.receiptList) ? data.receiptList : [];
+  state.cashReceiptChanges = Array.isArray(data?.recentChanges) ? data.recentChanges : [];
+  state.cashReceiptReady = true;
+  renderCashReceiptWorkspace();
+}
+
+function renderCashReceiptWorkspace() {
+  const targetTotal = document.querySelector("#cash-receipt-target-total");
+  const activeTotal = document.querySelector("#cash-receipt-active-total");
+  const changeTotal = document.querySelector("#cash-receipt-change-total");
+  if (targetTotal) targetTotal.textContent = `${state.cashReceiptRows.length.toLocaleString("ko-KR")}명`;
+  if (activeTotal) activeTotal.textContent = `${state.cashReceiptStudents.length.toLocaleString("ko-KR")}명`;
+  if (changeTotal) changeTotal.textContent = `${state.cashReceiptChanges.length.toLocaleString("ko-KR")}건`;
+
+  const select = document.querySelector("#cash-receipt-student-select");
+  if (select) {
+    select.replaceChildren();
+    const placeholder = element("option", "", "학생을 선택하세요");
+    placeholder.value = "";
+    placeholder.selected = true;
+    placeholder.disabled = true;
+    select.append(placeholder);
+    const registered = new Set(state.cashReceiptRows.map((row) => row.studentId));
+    state.cashReceiptStudents.filter((student) => !registered.has(student.studentId)).forEach((student) => {
+      const option = element("option", "", `${student.studentName} · ${student.gradeLabel || "학년 미지정"}`);
+      option.value = student.studentId;
+      select.append(option);
+    });
+  }
+  const payer = document.querySelector("#cash-receipt-payer");
+  const number = document.querySelector("#cash-receipt-number");
+  if (payer) payer.value = "";
+  if (number) number.value = "";
+
+  const rows = document.querySelector("#cash-receipt-rows");
+  if (rows) {
+    rows.replaceChildren();
+    if (!state.cashReceiptRows.length) {
+      const tr = element("tr");
+      const td = element("td", "cash-receipt-empty", "등록된 발급 대상자가 없습니다.");
+      td.colSpan = 9;
+      tr.append(td);
+      rows.append(tr);
+    } else {
+      state.cashReceiptRows.forEach((item) => {
+        const tr = element("tr");
+        tr.append(element("td", "", item.gradeLabel || "-"));
+        const studentCell = element("td");
+        const studentLink = element("button", "student-link", item.studentName || "학생");
+        studentLink.type = "button";
+        studentLink.addEventListener("click", () => openStudent(item.studentId, studentLink));
+        studentCell.append(studentLink);
+        if (item.status !== "재원") studentCell.append(element("span", "scheduled-badge", item.status || "상태 미지정"));
+        tr.append(studentCell);
+        const payerCell = element("td");
+        const payerInput = element("input", "cash-receipt-inline-input");
+        payerInput.value = item.payerName || "";
+        payerInput.maxLength = 40;
+        payerInput.placeholder = "입금자명";
+        payerInput.setAttribute("aria-label", `${item.studentName} 입금자명`);
+        payerCell.append(payerInput);
+        tr.append(payerCell);
+        tr.append(element("td", "", item.baseDay ? `매월 ${item.baseDay}일` : "-"));
+        const numberCell = element("td");
+        const numberInput = element("input", "cash-receipt-inline-input receipt-number-input");
+        numberInput.value = item.receiptNumber || "";
+        numberInput.maxLength = 30;
+        numberInput.placeholder = "발급용 번호";
+        numberInput.setAttribute("aria-label", `${item.studentName} 현금영수증 번호`);
+        numberCell.append(numberInput);
+        tr.append(numberCell);
+        cashReceiptMonthLabels().forEach(() => {
+          const monthCell = element("td", "receipt-print-only");
+          const check = element("input", "receipt-print-check");
+          check.type = "checkbox";
+          monthCell.append(check);
+          tr.append(monthCell);
+        });
+        const actionCell = element("td", "cash-receipt-actions");
+        const saveButton = element("button", "table-action-button", "저장");
+        const removeButton = element("button", "danger-button compact", "제외");
+        saveButton.type = removeButton.type = "button";
+        saveButton.addEventListener("click", () => saveCashReceiptTarget({
+          studentId: item.studentId,
+          receiptNumber: numberInput.value,
+          payerName: payerInput.value,
+          version: item.version,
+        }, saveButton));
+        removeButton.addEventListener("click", () => removeCashReceiptTarget(item, removeButton));
+        actionCell.append(saveButton, removeButton);
+        tr.append(actionCell);
+        rows.append(tr);
+      });
+    }
+  }
+  renderCashReceiptHistory();
+}
+
+function renderCashReceiptHistory() {
+  const list = document.querySelector("#cash-receipt-history-list");
+  if (!list) return;
+  list.replaceChildren();
+  if (!state.cashReceiptChanges.length) {
+    list.append(element("p", "vacation-empty", "수파베이스 전환 후 변경 이력이 아직 없습니다."));
+    return;
+  }
+  const actionLabels = { ADD: "명단 추가", UPDATE: "정보 수정", REMOVE: "명단 제외" };
+  state.cashReceiptChanges.forEach((change) => {
+    const row = element("article", "cash-receipt-history-row");
+    const summary = element("div", "cash-receipt-history-summary");
+    const name = element("button", "student-link", change.studentName || "학생");
+    name.type = "button";
+    name.addEventListener("click", () => openStudent(change.studentId, name));
+    summary.append(name, element("span", `cash-receipt-change-action action-${String(change.action || "").toLowerCase()}`, actionLabels[change.action] || change.action));
+    const detail = element("p", "cash-receipt-history-detail");
+    const before = `${change.beforePayerName || "-"} / ${change.beforeReceiptNumber || "-"}`;
+    const after = `${change.afterPayerName || "-"} / ${change.afterReceiptNumber || "-"}`;
+    detail.textContent = `${before} → ${after}`;
+    const meta = element("span", "cash-receipt-history-meta", `${change.createdAt || ""} · ${change.actorEmail || ""}`);
+    row.append(summary, detail, meta);
+    list.append(row);
+  });
+}
+
+async function saveCashReceiptTarget(target, button) {
+  const receiptNumber = String(target.receiptNumber || "").trim();
+  if (!receiptNumber) {
+    showNotice("현금영수증 발급용 번호를 입력해주세요.", "error");
+    return;
+  }
+  button.disabled = true;
+  const { data, error } = await supabase.rpc("update_cash_receipt_target", {
+    p_student_id: target.studentId,
+    p_receipt_number: receiptNumber,
+    p_payer_name: String(target.payerName || "").trim() || null,
+    p_is_delete: false,
+    p_expected_version: target.version,
+  });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    await loadCashReceiptWorkspace();
+    return;
+  }
+  showNotice(data?.unchanged ? "변경된 내용이 없습니다." : "현금영수증 정보를 저장하고 변경 이력에 반영했습니다.", "success");
+  await loadCashReceiptWorkspace();
+}
+
+async function removeCashReceiptTarget(target, button) {
+  if (!window.confirm(`${target.studentName || "선택한 학생"}을(를) 현금영수증 발급 명단에서 제외할까요?`)) return;
+  button.disabled = true;
+  const { data, error } = await supabase.rpc("update_cash_receipt_target", {
+    p_student_id: target.studentId,
+    p_receipt_number: null,
+    p_payer_name: null,
+    p_is_delete: true,
+    p_expected_version: target.version,
+  });
+  button.disabled = false;
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    await loadCashReceiptWorkspace();
+    return;
+  }
+  showNotice(data?.unchanged ? "이미 명단에서 제외된 학생입니다." : "발급 명단에서 제외하고 변경 이력에 반영했습니다.", "success");
+  await loadCashReceiptWorkspace();
 }
 
 function createSiblingView() {
