@@ -4343,10 +4343,15 @@ function createAccessSettingsView() {
   const backupHead = element("div", "toolbar operational-settings-head");
   const backupTitle = element("div");
   backupTitle.append(element("strong", "settings-panel-title", "검증 백업 및 외부 보관"),
-    element("p", "settings-panel-copy", "자정에 백업 주기를 확인하며, 같은 내용은 한 번만 저장합니다. 복원 전에는 현재 상태를 자동 보존하고 전체 검증을 통과해야 반영합니다."));
+    element("p", "settings-panel-copy", "자정에 백업 주기를 확인하며, 같은 내용은 한 번만 저장합니다. PC에 저장한 JSON도 검증 백업으로 다시 가져올 수 있습니다."));
   const createBackup = element("button", "settings-action-button", "지금 백업");
   createBackup.type="button";createBackup.addEventListener("click",()=>createVerifiedBackup(createBackup));
-  backupHead.append(backupTitle,createBackup);
+  const importBackup = element("button", "quiet-button", "JSON 가져오기");importBackup.type="button";
+  const importInput=document.createElement("input");importInput.type="file";importInput.accept="application/json,.json";importInput.hidden=true;
+  importBackup.addEventListener("click",()=>importInput.click());
+  importInput.addEventListener("change",()=>{const file=importInput.files?.[0];if(file)importDataBackup(file,importBackup,importInput);});
+  const backupActions=element("div","data-backup-head-actions");backupActions.append(importBackup,createBackup,importInput);
+  backupHead.append(backupTitle,backupActions);
   const backupSummary = element("div","backup-summary-grid");backupSummary.id="backup-summary-grid";
   const backupList = element("div","data-backup-list");backupList.id="data-backup-list";
   const backupPreview = element("div","backup-preview-box");backupPreview.id="backup-preview-box";
@@ -4534,7 +4539,7 @@ function renderDataBackups() {
   if(!state.dataBackups.length){list.append(element("p","settings-audit-empty","아직 생성된 Supabase 검증 백업이 없습니다."));return;}
   state.dataBackups.forEach((backup)=>{
     const row=element("article","data-backup-row");const copy=element("div");
-    const type={MANUAL:"수동",AUTOMATIC:"자정 자동",PRE_RESTORE:"복구 전"}[backup.type]||backup.type;
+    const type={MANUAL:"수동",AUTOMATIC:"자정 자동",PRE_RESTORE:"복원 전",IMPORTED:"외부 가져오기"}[backup.type]||backup.type;
     copy.append(element("strong","",backup.label||"검증 백업"),
       element("p","settings-audit-memo",`${type} · ${backup.createdAt||"-"} · ${formatBytes(backup.payloadBytes)} · ${Number(backup.manifest?.rowCount||0).toLocaleString("ko-KR")}행`),
       element("code","backup-checksum",backup.checksum||"-"));
@@ -4584,6 +4589,22 @@ async function downloadDataBackup(backup,button) {
   button.disabled=true;button.textContent="준비 중…";const{data,error}=await supabase.rpc("download_data_backup",{p_backup_id:backup.backupId});button.disabled=false;button.textContent="JSON 저장";
   if(error){showNotice(normalizeError(error,"백업 JSON 저장"),"error");return;}
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json;charset=utf-8"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=`academy-backup-${String(backup.createdAt||"").slice(0,10)||"latest"}-${String(backup.backupId).slice(0,8)}.json`;document.body.append(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);showNotice("검증 백업 JSON 저장을 시작했습니다.","success");
+}
+
+async function importDataBackup(file,button,input) {
+  const limit=10*1024*1024;
+  if(file.size<=0||file.size>limit){showNotice("가져올 백업 JSON은 10MB 이하여야 합니다.","error");input.value="";return;}
+  let parsed;
+  try{parsed=JSON.parse(await file.text());}catch{showNotice("JSON 파일을 읽을 수 없습니다. 학원관리시스템에서 저장한 백업인지 확인해주세요.","error");input.value="";return;}
+  if(!parsed||typeof parsed!=="object"||Array.isArray(parsed)||!parsed.payload||!parsed.checksum||!parsed.manifest){showNotice("학원관리시스템 검증 백업 형식이 아닙니다.","error");input.value="";return;}
+  const suggested=`외부 가져오기 · ${String(parsed.label||file.name||"검증 백업").slice(0,80)}`;
+  const label=window.prompt("가져온 백업의 표시 이름을 입력하세요.",suggested);if(label===null){input.value="";return;}
+  button.disabled=true;const original=button.textContent;button.textContent="파일 검증 중…";
+  const{data,error}=await supabase.rpc("import_data_backup",{p_export:parsed,p_label:label.trim()||suggested,p_request_id:crypto.randomUUID()});
+  button.disabled=false;button.textContent=original;input.value="";
+  if(error){showNotice(normalizeError(error,"외부 백업 가져오기"),"error");return;}
+  showNotice(`외부 백업을 검증해 등록했습니다. ${Number(data?.manifest?.rowCount||0).toLocaleString("ko-KR")}행 · ${formatBytes(data?.payloadBytes)}`,"success");
+  state.backupPreview=null;await loadAccessSettingsWorkspace();
 }
 
 function renderOperationsDiagnostics() {

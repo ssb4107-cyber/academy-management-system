@@ -366,6 +366,7 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .client-error-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .resolve-error-button { color: #146b42; border-color: #9fd6b8; background: #effaf3; }
 .backup-summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; padding: 18px 20px; border-bottom: 1px solid #edf0f4; }
+.data-backup-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .data-backup-list { display: grid; }
 .data-backup-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 18px; padding: 15px 18px; border-top: 1px solid #edf0f4; }
 .data-backup-row:first-child { border-top: 0; }
@@ -557,6 +558,7 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .error-recovery-box { grid-template-columns: 1fr; padding: 16px; }
   .error-recovery-advice { grid-column: auto; }
   .backup-summary-grid { grid-template-columns: 1fr 1fr; padding: 16px; }
+  .data-backup-head-actions { width: 100%; justify-content: flex-start; }
   .data-backup-row { grid-template-columns: 1fr; }
   .data-backup-actions { justify-content: flex-start; }
   .backup-preview-box { margin: 14px 16px 0; }
