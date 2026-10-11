@@ -97,6 +97,11 @@ const state = {
   accessUserQuery: "",
   accessUserFilter: "",
   accessSettingsReady: false,
+  operationsSummary: {},
+  latestDiagnosticRun: null,
+  diagnosticRuns: [],
+  clientErrors: [],
+  clientErrorFilter: "OPEN",
 };
 
 const app = document.querySelector("#app");
@@ -112,15 +117,52 @@ function icon(mark, className = "icon") {
   return element("span", className, mark);
 }
 
-function normalizeError(error) {
-  const message = String(error?.message || error || "알 수 없는 오류");
-  if (/최고 관리자만/i.test(message)) return "최고 관리자만 이 요청을 처리할 수 있습니다.";
-  if (/registered|활성 사용자|권한/i.test(message)) {
-    return "등록된 운영 계정이 아니거나 현재 사용이 중지된 계정입니다.";
-  }
-  if (/rate limit/i.test(message)) return "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
-  return message;
+const reportedErrorCooldown = new Map();
+
+function recordClientError(error, context = "화면 작업") {
+  if (!state.session || !state.profile || !error) return null;
+  const message = String(error?.message || error || "알 수 없는 오류").trim();
+  if (!message || /로그인이 필요|활성 사용자만 오류/i.test(message)) return null;
+  const code = String(error?.code || error?.name || "").trim();
+  const fingerprint = `${context}|${code}|${message.slice(0, 300)}`;
+  const now = Date.now();
+  const previous = reportedErrorCooldown.get(fingerprint);
+  if (previous && now - previous.at < 60000) return previous.errorId;
+  const errorId = crypto.randomUUID();
+  reportedErrorCooldown.set(fingerprint, { at: now, errorId });
+  void supabase.rpc("report_client_error", {
+    p_error_id: errorId,
+    p_context: String(context || "화면 작업").slice(0, 80),
+    p_error_code: code.slice(0, 80) || null,
+    p_message: message.slice(0, 2000),
+    p_detail: String(error?.details || error?.hint || "").slice(0, 2000) || null,
+    p_stack_text: String(error?.stack || "").slice(0, 4000) || null,
+    p_page_path: `${window.location.pathname}${window.location.hash || ""}`.slice(0, 500),
+    p_browser_text: String(navigator.userAgent || "").slice(0, 500),
+  }).then(({ error: reportError }) => {
+    if (reportError) reportedErrorCooldown.delete(fingerprint);
+  });
+  return errorId;
 }
+
+function normalizeError(error, context = "서버 요청") {
+  const message = String(error?.message || error || "알 수 없는 오류");
+  const errorId = error && typeof error === "object" ? recordClientError(error, context) : null;
+  let friendly = message;
+  if (/최고 관리자만/i.test(message)) friendly = "최고 관리자만 이 요청을 처리할 수 있습니다.";
+  else if (/registered|활성 사용자|권한/i.test(message)) {
+    friendly = "등록된 운영 계정이 아니거나 현재 사용이 중지된 계정입니다.";
+  } else if (/rate limit/i.test(message)) friendly = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+  return errorId ? `${friendly}\n오류 ID: ${errorId}` : friendly;
+}
+
+window.addEventListener("error", (event) => {
+  void recordClientError(event.error || new Error(event.message || "브라우저 오류"), "브라우저 처리");
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason || "처리되지 않은 작업 오류"));
+  void recordClientError(reason, "비동기 화면 처리");
+});
 
 function showNotice(message, tone = "info") {
   const notice = document.querySelector("#notice");
@@ -4272,6 +4314,52 @@ function createAccessSettingsView() {
   settingPanel.append(settingHead, grid);
   view.append(settingPanel);
 
+  const diagnosticsPanel = element("section", "student-panel operations-diagnostics-panel");
+  const diagnosticsHead = element("div", "toolbar operational-settings-head");
+  const diagnosticsTitle = element("div");
+  diagnosticsTitle.append(element("strong", "settings-panel-title", "운영 상태 진단"),
+    element("p", "settings-panel-copy", "학생·원장·수납·휴가·요청·급여·권한 연결을 원본 변경 없이 검사하고 결과를 보존합니다."));
+  const runDiagnostics = element("button", "settings-action-button", "전체 진단 실행");
+  runDiagnostics.type = "button";
+  runDiagnostics.addEventListener("click", () => runOperationsDiagnostics(runDiagnostics));
+  diagnosticsHead.append(diagnosticsTitle, runDiagnostics);
+  const diagnosticsSummary = element("div", "operations-summary-grid");
+  diagnosticsSummary.id = "operations-summary-grid";
+  const latest = element("div", "operations-latest-run");
+  latest.id = "operations-latest-run";
+  const issues = element("div", "diagnostic-issue-list");
+  issues.id = "diagnostic-issue-list";
+  const runHistory = element("div", "diagnostic-run-history");
+  runHistory.id = "diagnostic-run-history";
+  diagnosticsPanel.append(diagnosticsHead, diagnosticsSummary, latest, issues, runHistory);
+  view.append(diagnosticsPanel);
+
+  const errorPanel = element("section", "student-panel client-error-panel");
+  const errorHead = element("div", "toolbar operational-settings-head");
+  const errorTitle = element("div");
+  errorTitle.append(element("strong", "settings-panel-title", "오류 이력 및 자력 해결"),
+    element("p", "settings-panel-copy", "업무 입력 원문 없이 오류 문구·발생 화면·계정·시각만 기록합니다."));
+  const errorFilter = element("select", "status-select");
+  [["OPEN", "미확인 오류"], ["ALL", "전체 오류"], ["RESOLVED", "확인 완료"]].forEach(([value, label]) => {
+    const option = element("option", "", label);option.value=value;option.selected=state.clientErrorFilter===value;errorFilter.append(option);
+  });
+  errorFilter.addEventListener("change", () => { state.clientErrorFilter=errorFilter.value;renderOperationsDiagnostics(); });
+  errorHead.append(errorTitle, errorFilter);
+  const recovery = element("div", "error-recovery-box");
+  const recoveryInput = element("textarea", "text-input error-recovery-input");
+  recoveryInput.id = "error-recovery-input";
+  recoveryInput.placeholder = "화면에 표시된 오류 문구 또는 오류 ID를 붙여넣으세요.";
+  const recoveryButton = element("button", "quiet-button", "대응 순서 확인");
+  recoveryButton.type = "button";
+  const recoveryAdvice = element("div", "error-recovery-advice");
+  recoveryAdvice.id = "error-recovery-advice";
+  recoveryButton.addEventListener("click", () => renderRecoveryAdvice(recoveryInput.value));
+  recovery.append(recoveryInput, recoveryButton, recoveryAdvice);
+  const errorList = element("div", "client-error-list");
+  errorList.id = "client-error-list";
+  errorPanel.append(errorHead, recovery, errorList);
+  view.append(errorPanel);
+
   const audit = element("section", "student-panel settings-audit-panel");
   const auditHead = element("div", "toolbar settings-audit-head");
   auditHead.append(element("strong", "settings-panel-title", "최근 권한·설정 변경 이력"),
@@ -4291,8 +4379,12 @@ function createAccessSettingsView() {
 }
 
 async function loadAccessSettingsWorkspace() {
-  const { data, error } = await supabase.rpc("get_access_settings_workspace");
+  const [{ data, error }, { data: operations, error: operationsError }] = await Promise.all([
+    supabase.rpc("get_access_settings_workspace"),
+    supabase.rpc("get_operations_diagnostics_workspace"),
+  ]);
   if (error) { showNotice(normalizeError(error), "error");return false; }
+  if (operationsError) { showNotice(normalizeError(operationsError, "운영 진단 조회"), "error");return false; }
   state.accessUsers = Array.isArray(data?.users) ? data.users : [];
   state.accessTeachers = Array.isArray(data?.teachers) ? data.teachers : [];
   state.accessPermissions = Array.isArray(data?.managerPermissions) ? data.managerPermissions : [];
@@ -4300,6 +4392,10 @@ async function loadAccessSettingsWorkspace() {
   state.accessCounts = data?.counts || {};
   state.accessRevisions = Array.isArray(data?.recentRevisions) ? data.recentRevisions : [];
   state.accessDiagnostics = data?.diagnostics || null;
+  state.operationsSummary = operations?.summary || {};
+  state.latestDiagnosticRun = operations?.latestRun || null;
+  state.diagnosticRuns = Array.isArray(operations?.recentRuns) ? operations.recentRuns : [];
+  state.clientErrors = Array.isArray(operations?.errors) ? operations.errors : [];
   state.accessSettingsReady = true;
   renderAccessSettingsWorkspace();
   return true;
@@ -4375,6 +4471,148 @@ function renderAccessSettingsWorkspace() {
     const labels={USER_CREATE:"사용자 등록",USER_UPDATE:"사용자 수정",SETTINGS_UPDATE:"운영 설정 저장",SETTINGS_RESET:"기본값 복원"};
     const row=element("article","settings-audit-row");const copy=element("div");copy.append(element("strong","",labels[revision.action]||revision.action),element("p","settings-audit-memo",revision.memo||revision.targetId||""));row.append(copy,element("span","settings-audit-meta",`${revision.createdAt||""} · ${revision.actorEmail||""}`));audit.append(row);
   });}
+  renderOperationsDiagnostics();
+}
+
+function operationsStatusText(status) {
+  return { HEALTHY:"정상", WARNING:"확인 필요", CRITICAL:"조치 필요" }[status] || "진단 전";
+}
+
+function renderOperationsDiagnostics() {
+  const summary = state.operationsSummary || {};
+  const latest = state.latestDiagnosticRun;
+  const summaryGrid = document.querySelector("#operations-summary-grid");
+  if (summaryGrid) {
+    summaryGrid.replaceChildren();
+    [
+      ["최근 진단", operationsStatusText(latest?.status), latest?.status === "HEALTHY"],
+      ["발견 항목", `${Number(latest?.issueCount || 0).toLocaleString("ko-KR")}건`, false],
+      ["미확인 오류", `${Number(summary.openErrors || 0).toLocaleString("ko-KR")}건`, false],
+      ["24시간 오류", `${Number(summary.errors24h || 0).toLocaleString("ko-KR")}건`, false],
+    ].forEach(([label, value, healthy]) => {
+      const card = element("article", healthy ? "operations-summary-card healthy" : "operations-summary-card");
+      card.append(element("span", "", label), element("strong", "", value));summaryGrid.append(card);
+    });
+  }
+  const latestBox = document.querySelector("#operations-latest-run");
+  if (latestBox) {
+    latestBox.replaceChildren();
+    if (!latest) {
+      latestBox.append(element("p", "settings-audit-empty", "아직 Supabase 운영 진단을 실행하지 않았습니다."));
+    } else {
+      const badge = element("span", `diagnostic-status ${String(latest.status || "").toLowerCase()}`, operationsStatusText(latest.status));
+      const copy = element("div");
+      copy.append(element("strong", "", `최근 진단 · ${latest.createdAt || "-"}`),
+        element("p", "settings-audit-memo", `진단 ID ${latest.runId} · ${Number(latest.durationMs || 0).toLocaleString("ko-KR")}ms · ${latest.actorEmail || "-"}`));
+      latestBox.append(badge, copy);
+      const metrics = latest.metrics || {};
+      const metricLine = element("p", "diagnostic-metric-line",
+        `학생 ${Number(metrics.students || 0).toLocaleString("ko-KR")}명 · 수납 ${Number(metrics.payments || 0).toLocaleString("ko-KR")}건 · 휴가 ${Number(metrics.vacations || 0).toLocaleString("ko-KR")}건 · 승인 대기 ${Number(metrics.pendingRequests || 0).toLocaleString("ko-KR")}건`);
+      latestBox.append(metricLine);
+    }
+  }
+  const issueList = document.querySelector("#diagnostic-issue-list");
+  if (issueList) {
+    issueList.replaceChildren();
+    const issues = Array.isArray(latest?.issues) ? latest.issues : [];
+    if (latest && !issues.length) issueList.append(element("p", "diagnostic-clean", "학생·수납·휴가·요청·급여·권한 연결에서 문제가 발견되지 않았습니다."));
+    issues.forEach((issue) => {
+      const row = element("article", "diagnostic-issue-row");
+      const head = element("div", "diagnostic-issue-head");
+      head.append(element("span", `diagnostic-severity ${issue.severity === "치명적" || issue.severity === "높음" ? "high" : "medium"}`, issue.severity || "확인"),
+        element("strong", "", `${issue.message || issue.code}${Number(issue.count || 0) ? ` · ${Number(issue.count).toLocaleString("ko-KR")}건` : ""}`));
+      row.append(head, element("p", "diagnostic-action", issue.action || "화면을 새로고침한 뒤 다시 확인하세요."),
+        element("code", "diagnostic-code", issue.code || "-"));issueList.append(row);
+    });
+  }
+  const runHistory = document.querySelector("#diagnostic-run-history");
+  if (runHistory) {
+    runHistory.replaceChildren();
+    if (state.diagnosticRuns.length) runHistory.append(element("strong", "diagnostic-history-title", "최근 진단 이력"));
+    state.diagnosticRuns.forEach((run) => {
+      const row = element("div", "diagnostic-history-row");
+      row.append(element("span", `diagnostic-status ${String(run.status || "").toLowerCase()}`, operationsStatusText(run.status)),
+        element("span", "", `${run.createdAt || "-"} · 발견 ${Number(run.issueCount || 0)}건 · ${Number(run.durationMs || 0).toLocaleString("ko-KR")}ms`),
+        element("code", "diagnostic-code", run.runId || "-"));runHistory.append(row);
+    });
+  }
+
+  const errorList = document.querySelector("#client-error-list");
+  if (errorList) {
+    errorList.replaceChildren();
+    const errors = state.clientErrors.filter((item) => state.clientErrorFilter === "ALL" || item.status === state.clientErrorFilter);
+    if (!errors.length) errorList.append(element("p", "settings-audit-empty", "이 상태에 해당하는 오류가 없습니다."));
+    errors.forEach((item) => {
+      const row = element("article", `client-error-row ${String(item.status || "").toLowerCase()}`);
+      const head = element("div", "client-error-head");
+      const copy = element("div");
+      copy.append(element("strong", "", item.context || "화면 작업"),
+        element("p", "client-error-message", item.message || "오류 문구 없음"));
+      const badge = element("span", item.status === "OPEN" ? "status-badge warning" : "status-badge active", item.status === "OPEN" ? "미확인" : "확인 완료");
+      head.append(copy, badge);
+      const meta = element("p", "client-error-meta", `${item.createdAt || "-"} · ${item.actorEmail || "-"} · 오류 ID ${item.errorId || "-"}`);
+      const actions = element("div", "client-error-actions");
+      const advice = element("button", "table-action-button", "대응 안내");advice.type="button";
+      advice.addEventListener("click", () => {
+        const input = document.querySelector("#error-recovery-input");if(input)input.value=`${item.message || ""}\n오류 ID: ${item.errorId || ""}`;
+        renderRecoveryAdvice(item.message || "");
+      });
+      actions.append(advice);
+      if (item.status === "OPEN") {
+        const resolve = element("button", "table-action-button resolve-error-button", "확인 완료");resolve.type="button";
+        resolve.addEventListener("click", () => resolveClientError(item, resolve));actions.append(resolve);
+      }
+      row.append(head, meta, actions);errorList.append(row);
+    });
+  }
+}
+
+function recoveryAdviceFor(raw) {
+  const text = String(raw || "").trim();
+  const guide = {
+    title:"먼저 반영 여부를 확인하세요",
+    steps:["같은 저장이나 승인 버튼을 반복해서 누르지 않습니다.","대상 목록을 새로고침해 이미 반영됐는지 확인합니다.","반영되지 않았을 때만 한 번 다시 시도합니다.","계속되면 전체 진단을 실행하고 오류 ID를 보존합니다."],
+    stop:"DB 값을 직접 수정하거나 확인 없이 같은 요청을 반복하지 마세요.",
+  };
+  if (/권한|로그인|계정|사용 중지|최고 관리자/i.test(text)) {
+    guide.title="계정·권한 확인";guide.steps=["현재 로그인 이메일을 확인합니다.","등록 사용자에서 사용 상태와 사용자 종류를 확인합니다.","연결 원장과 학생 범위, 메뉴 권한을 확인합니다.","변경했다면 로그아웃 후 다시 로그인합니다."];
+  } else if (/중복|이미|요청 키|동시에|변경되었습니다/i.test(text)) {
+    guide.title="중복·동시 변경 확인";guide.steps=["목록을 새로고침해 저장 결과를 확인합니다.","이미 반영됐다면 추가 저장하지 않습니다.","다른 화면에서 변경된 경우 최신 값을 다시 확인합니다.","반영되지 않았을 때만 새 요청으로 한 번 저장합니다."];
+  } else if (/학생|원장|수납|휴가|급여|참조|연결/i.test(text)) {
+    guide.title="업무 기록 연결 확인";guide.steps=["오류가 난 학생 또는 원장 상세를 다시 엽니다.","담당 원장·상태·대상 월을 확인합니다.","전체 진단에서 같은 코드가 발견되는지 확인합니다.","오류 ID와 진단 ID를 함께 보존합니다."];
+  } else if (/network|fetch|timeout|시간 초과|인터넷/i.test(text)) {
+    guide.title="네트워크 확인";guide.steps=["인터넷 연결을 확인합니다.","목록을 새로고침해 처리 완료 여부를 먼저 확인합니다.","잠시 후 한 번만 다시 시도합니다.","계속되면 오류 ID와 발생 시각을 확인합니다."];
+  }
+  return guide;
+}
+
+function renderRecoveryAdvice(raw) {
+  const box = document.querySelector("#error-recovery-advice");if(!box)return;
+  const guide = recoveryAdviceFor(raw);box.replaceChildren();
+  box.append(element("strong", "", guide.title));
+  const list = element("ol");guide.steps.forEach((step) => list.append(element("li", "", step)));box.append(list);
+  box.append(element("p", "error-recovery-stop", `주의: ${guide.stop}`));
+}
+
+async function runOperationsDiagnostics(button) {
+  button.disabled=true;const original=button.textContent;button.textContent="진단 중…";
+  const { data, error } = await supabase.rpc("run_operations_diagnostics");
+  button.disabled=false;button.textContent=original;
+  if (error) { showNotice(normalizeError(error, "전체 운영 진단"), "error");return; }
+  showNotice(data?.healthy ? `운영 진단이 정상입니다. ${Number(data?.durationMs || 0)}ms` : `운영 진단에서 확인할 항목 ${Number(data?.issueCount || 0)}건을 찾았습니다.`, data?.healthy ? "success" : "warning");
+  await loadAccessSettingsWorkspace();
+}
+
+async function resolveClientError(item, button) {
+  const note = window.prompt("확인 내용이 있으면 입력하세요. 비워도 완료할 수 있습니다.", "화면 및 데이터 상태 확인 완료");
+  if (note === null) return;
+  button.disabled=true;button.textContent="처리 중…";
+  const { error } = await supabase.rpc("resolve_client_error", {
+    p_error_id:item.errorId,p_expected_version:Number(item.version),p_resolution_note:note.trim()||null,p_request_id:crypto.randomUUID(),
+  });
+  button.disabled=false;button.textContent="확인 완료";
+  if (error) { showNotice(normalizeError(error, "오류 확인 완료"), "error");return; }
+  showNotice("오류를 확인 완료로 표시했습니다.", "success");await loadAccessSettingsWorkspace();
 }
 
 function openAccessUserModal(user = null) {
