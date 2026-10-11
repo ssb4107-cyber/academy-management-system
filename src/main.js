@@ -80,6 +80,13 @@ const state = {
   salaryCalculationMonth: "",
   salaryPreview: null,
   salaryPreviewOptions: {},
+  teacherRows: [],
+  teacherSummary: {},
+  teacherRevisions: [],
+  teacherDiagnostics: null,
+  teacherQuery: "",
+  teacherFilter: "",
+  teacherReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -220,6 +227,7 @@ function renderApp(sessionData) {
   const cashReceiptTab = element("button", "view-tab", "현금영수증");
   const statisticsTab = element("button", "view-tab", "기간 통계");
   const salaryTab = element("button", "view-tab", "급여 관리");
+  const teacherTab = element("button", "view-tab", "원장 관리");
   studentTab.id = "student-tab";
   paymentTab.id = "payment-tab";
   requestTab.id = "request-tab";
@@ -229,6 +237,7 @@ function renderApp(sessionData) {
   cashReceiptTab.id = "cash-receipt-tab";
   statisticsTab.id = "statistics-tab";
   salaryTab.id = "salary-tab";
+  teacherTab.id = "teacher-tab";
   studentTab.type = "button";
   paymentTab.type = "button";
   requestTab.type = "button";
@@ -238,10 +247,12 @@ function renderApp(sessionData) {
   cashReceiptTab.type = "button";
   statisticsTab.type = "button";
   salaryTab.type = "button";
+  teacherTab.type = "button";
   cashReceiptTab.hidden = state.profile.role !== "SUPER_ADMIN";
   statisticsTab.hidden = state.profile.role !== "SUPER_ADMIN";
   salaryTab.hidden = state.profile.role !== "SUPER_ADMIN";
-  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab, cashReceiptTab, statisticsTab, salaryTab);
+  teacherTab.hidden = state.profile.role !== "SUPER_ADMIN";
+  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab, cashReceiptTab, statisticsTab, salaryTab, teacherTab);
   main.append(viewSwitcher);
 
   const studentView = element("div", "view-section");
@@ -327,7 +338,9 @@ function renderApp(sessionData) {
   statisticsView.hidden = true;
   const salaryView = createSalaryView();
   salaryView.hidden = true;
-  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView, cashReceiptView, statisticsView, salaryView);
+  const teacherView = createTeacherManagementView();
+  teacherView.hidden = true;
+  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView, cashReceiptView, statisticsView, salaryView, teacherView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -552,6 +565,36 @@ function renderApp(sessionData) {
     statisticsTab.classList.remove("active");
     showNotice("");
     if (!state.salaryReady) await loadSalaryWorkspace();
+  });
+  teacherTab.addEventListener("click", async () => {
+    if (state.profile.role !== "SUPER_ADMIN") return;
+    studentView.hidden = true;
+    paymentView.hidden = true;
+    requestView.hidden = true;
+    studentRequestView.hidden = true;
+    vacationView.hidden = true;
+    siblingView.hidden = true;
+    cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
+    salaryView.hidden = true;
+    teacherView.hidden = false;
+    teacherTab.classList.add("active");
+    studentTab.classList.remove("active");
+    paymentTab.classList.remove("active");
+    requestTab.classList.remove("active");
+    studentRequestTab.classList.remove("active");
+    vacationTab.classList.remove("active");
+    siblingTab.classList.remove("active");
+    cashReceiptTab.classList.remove("active");
+    statisticsTab.classList.remove("active");
+    salaryTab.classList.remove("active");
+    showNotice("");
+    if (!state.teacherReady) await loadTeacherWorkspace();
+  });
+  viewSwitcher.addEventListener("click", (event) => {
+    if (event.target === teacherTab) return;
+    teacherView.hidden = true;
+    teacherTab.classList.remove("active");
   });
 }
 
@@ -3802,6 +3845,304 @@ function renderStudentPaymentHistory(container, data) {
   table.append(thead, tbody);
   wrap.append(table);
   container.append(wrap);
+}
+
+function createTeacherManagementView() {
+  const view = element("div", "view-section");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow teacher-eyebrow", "TEACHER DIRECTORY"));
+  title.append(element("h1", "page-title", "원장 관리"));
+  title.append(element("p", "page-copy", "학생 담당자와 급여 계산에 공통으로 쓰는 원장 기준정보를 관리합니다."));
+  const headingActions = element("div", "heading-actions");
+  const health = element("span", "teacher-health");
+  health.id = "teacher-health";
+  health.textContent = "기준정보 확인 중";
+  const add = element("button", "teacher-action-button", "+ 원장 추가");
+  add.type = "button";
+  add.addEventListener("click", () => openTeacherModal());
+  headingActions.append(health, add);
+  heading.append(title, headingActions);
+  view.append(heading);
+
+  const stats = element("section", "stats-grid teacher-kpis");
+  [["전체 원장", "teacher-total", true], ["활성 원장", "teacher-active", false],
+    ["급여 정산 대상", "teacher-salary", false], ["담당 재원생", "teacher-students", false]]
+    .forEach(([label, id, accent]) => {
+      const card = createStat(label, "-", accent);
+      card.querySelector(".stat-value").id = id;
+      stats.append(card);
+    });
+  view.append(stats);
+
+  const panel = element("section", "student-panel");
+  const toolbar = element("div", "toolbar teacher-toolbar");
+  const searchWrap = element("label", "search-wrap");
+  searchWrap.append(icon("⌕", "search-icon"));
+  const search = element("input", "search-input");
+  search.type = "search";
+  search.placeholder = "원장명 검색";
+  search.value = state.teacherQuery;
+  search.setAttribute("aria-label", "원장명 검색");
+  searchWrap.append(search);
+  const filter = element("select", "status-select");
+  filter.setAttribute("aria-label", "원장 상태 필터");
+  [["", "전체 상태"], ["active", "활성"], ["inactive", "비활성"], ["salary", "급여 대상"]]
+    .forEach(([value, label]) => {
+      const option = element("option", "", label);
+      option.value = value;
+      option.selected = state.teacherFilter === value;
+      filter.append(option);
+    });
+  const refresh = element("button", "quiet-button", "새로고침");
+  refresh.type = "button";
+  refresh.addEventListener("click", () => loadTeacherWorkspace());
+  toolbar.append(searchWrap, filter, refresh);
+  panel.append(toolbar);
+  const tableWrap = element("div", "table-wrap");
+  const table = element("table", "student-table teacher-table");
+  const thead = element("thead");
+  const head = element("tr");
+  ["원장명", "상태", "기본 배분율", "급여 대상", "근무 기간", "연결 계정", "담당 재원생", "메모", "최근 수정", ""]
+    .forEach((label) => head.append(element("th", "", label)));
+  thead.append(head);
+  const tbody = element("tbody");
+  tbody.id = "teacher-rows";
+  table.append(thead, tbody);
+  tableWrap.append(table);
+  panel.append(tableWrap);
+  view.append(panel);
+
+  const audit = element("section", "student-panel teacher-audit-panel");
+  const auditHead = element("div", "toolbar teacher-audit-head");
+  auditHead.append(element("strong", "teacher-panel-title", "최근 원장 변경 이력"),
+    element("span", "request-toolbar-copy", "누가 언제 변경했는지 자동으로 보존됩니다."));
+  const auditList = element("div", "teacher-audit-list");
+  auditList.id = "teacher-audit-list";
+  audit.append(auditHead, auditList);
+  view.append(audit);
+
+  let timer;
+  search.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(async () => {
+      state.teacherQuery = search.value.trim();
+      await loadTeacherWorkspace();
+    }, 250);
+  });
+  filter.addEventListener("change", async () => {
+    state.teacherFilter = filter.value;
+    await loadTeacherWorkspace();
+  });
+  return view;
+}
+
+async function loadTeacherWorkspace() {
+  const { data, error } = await supabase.rpc("get_teacher_management_workspace", {
+    p_query: state.teacherQuery || null,
+    p_filter: state.teacherFilter || null,
+  });
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return false;
+  }
+  state.teacherRows = Array.isArray(data?.rows) ? data.rows : [];
+  state.teacherSummary = data?.summary || {};
+  state.teacherRevisions = Array.isArray(data?.recentRevisions) ? data.recentRevisions : [];
+  state.teacherDiagnostics = data?.diagnostics || null;
+  state.teacherReady = true;
+  renderTeacherWorkspace();
+  return true;
+}
+
+function renderTeacherWorkspace() {
+  const summary = state.teacherSummary || {};
+  const values = {
+    "teacher-total": `${Number(summary.total || 0).toLocaleString("ko-KR")}명`,
+    "teacher-active": `${Number(summary.active || 0).toLocaleString("ko-KR")}명`,
+    "teacher-salary": `${Number(summary.salary || 0).toLocaleString("ko-KR")}명`,
+    "teacher-students": `${Number(summary.activeStudents || 0).toLocaleString("ko-KR")}명`,
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const node = document.querySelector(`#${id}`);
+    if (node) node.textContent = value;
+  });
+  const health = document.querySelector("#teacher-health");
+  if (health) {
+    const healthy = state.teacherDiagnostics?.healthy !== false
+      && Number(state.teacherDiagnostics?.duplicateNames || 0) === 0;
+    health.textContent = healthy ? "기준정보 정상" : "기준정보 점검 필요";
+    health.className = healthy ? "teacher-health healthy" : "teacher-health warning";
+  }
+
+  const tbody = document.querySelector("#teacher-rows");
+  if (tbody) {
+    tbody.replaceChildren();
+    if (!state.teacherRows.length) {
+      const tr = element("tr");
+      const td = element("td", "teacher-empty", "조건에 맞는 원장이 없습니다.");
+      td.colSpan = 10;
+      tr.append(td);
+      tbody.append(tr);
+    } else {
+      state.teacherRows.forEach((teacher) => {
+        const tr = element("tr");
+        tr.append(element("td", "teacher-name", teacher.name || "-"));
+        const status = element("td");
+        status.append(element("span", teacher.active ? "status-badge active" : "status-badge", teacher.active ? "활성" : "비활성"));
+        tr.append(status, element("td", "statistics-number", `${Number(teacher.defaultRate || 0)}%`),
+          element("td", "", teacher.salaryTarget ? "대상" : "제외"),
+          element("td", "", `${teacher.startDate || "-"} ~ ${teacher.endDate || "-"}`),
+          element("td", "statistics-number", `${Number(teacher.linkedUsers || 0)}명`),
+          element("td", "statistics-number", `${Number(teacher.activeStudents || 0)}명`),
+          element("td", "memo-cell", teacher.memo || "-"),
+          element("td", "teacher-updated", `${teacher.updatedAt || "-"}${teacher.updatedBy ? `\n${teacher.updatedBy}` : ""}`));
+        const action = element("td");
+        const edit = element("button", "table-action-button", "수정");
+        edit.type = "button";
+        edit.addEventListener("click", () => openTeacherModal(teacher));
+        action.append(edit);
+        tr.append(action);
+        tbody.append(tr);
+      });
+    }
+  }
+
+  const list = document.querySelector("#teacher-audit-list");
+  if (list) {
+    list.replaceChildren();
+    if (!state.teacherRevisions.length) {
+      list.append(element("p", "teacher-audit-empty", "아직 Supabase에서 변경한 원장 정보가 없습니다."));
+    } else {
+      state.teacherRevisions.forEach((revision) => {
+        const row = element("article", "teacher-audit-row");
+        const copy = element("div");
+        copy.append(element("strong", "", `${revision.teacherName || "원장"} · ${revision.action === "CREATE" ? "등록" : "수정"}`),
+          element("p", "teacher-audit-memo", revision.memo || "메모 없음"));
+        row.append(copy, element("span", "teacher-audit-meta", `${revision.createdAt || ""} · ${revision.actorEmail || ""}`));
+        list.append(row);
+      });
+    }
+  }
+}
+
+function openTeacherModal(teacher = null) {
+  const editing = Boolean(teacher);
+  const backdrop = element("div", "modal-backdrop");
+  const dialog = element("section", "student-modal teacher-modal");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  const header = element("header", "modal-header");
+  const heading = element("div", "modal-title-wrap");
+  heading.append(element("span", "modal-title-icon teacher-modal-icon", "👩‍🏫"),
+    element("h2", "modal-title", editing ? "원장 정보 수정" : "원장 등록"));
+  const close = element("button", "modal-close", "×");
+  close.type = "button";
+  header.append(heading, close);
+  const form = element("form", "teacher-form");
+  const fields = element("div", "request-form-grid teacher-form-grid");
+  const name = element("input", "text-input");
+  name.required = true;
+  name.maxLength = 40;
+  name.value = teacher?.name || "";
+  name.readOnly = editing;
+  const rate = element("input", "text-input");
+  rate.type = "number";
+  rate.min = "0";
+  rate.max = "100";
+  rate.step = "0.01";
+  rate.required = true;
+  rate.value = String(teacher?.defaultRate ?? 60);
+  const active = element("select", "text-input");
+  [["true", "활성"], ["false", "비활성"]].forEach(([value, label]) => {
+    const option = element("option", "", label);
+    option.value = value;
+    option.selected = value === String(teacher?.active ?? true);
+    if (value === "false" && teacher?.active && Number(teacher?.linkedUsers || 0) > 0) option.disabled = true;
+    active.append(option);
+  });
+  const salary = element("select", "text-input");
+  [["true", "급여 정산 대상"], ["false", "급여 정산 제외"]].forEach(([value, label]) => {
+    const option = element("option", "", label);
+    option.value = value;
+    option.selected = value === String(teacher?.salaryTarget ?? true);
+    salary.append(option);
+  });
+  const start = element("input", "text-input");
+  start.type = "date";
+  start.value = teacher?.startDate || "";
+  const end = element("input", "text-input");
+  end.type = "date";
+  end.value = teacher?.endDate || "";
+  const memo = element("textarea", "text-input teacher-memo-input");
+  memo.maxLength = 500;
+  memo.rows = 4;
+  memo.value = teacher?.memo || "";
+  const memoField = salaryFormField("메모", memo);
+  memoField.classList.add("field-wide");
+  fields.append(salaryFormField("원장명", name), salaryFormField("신규학생 기본 배분율(%)", rate),
+    salaryFormField("사용 상태", active), salaryFormField("급여 정산", salary),
+    salaryFormField("근무 시작일", start), salaryFormField("근무 종료일", end), memoField);
+  if (editing && Number(teacher.linkedUsers || 0) > 0) {
+    const warning = element("p", "teacher-modal-warning", `활성 계정 ${Number(teacher.linkedUsers)}개와 연결되어 있어 먼저 사용자 연결을 바꾸기 전에는 비활성화할 수 없습니다.`);
+    fields.append(warning);
+  }
+  const footer = element("footer", "modal-footer");
+  const cancel = element("button", "secondary-button", "취소");
+  cancel.type = "button";
+  const save = element("button", "teacher-action-button", "저장");
+  save.type = "submit";
+  footer.append(cancel, save);
+  form.append(fields, footer);
+  dialog.append(header, form);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+  document.body.classList.add("modal-open");
+  const dismiss = () => {
+    backdrop.remove();
+    document.body.classList.remove("modal-open");
+  };
+  close.addEventListener("click", dismiss);
+  cancel.addEventListener("click", dismiss);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) dismiss(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (start.value && end.value && start.value > end.value) {
+      showNotice("종료일은 시작일보다 빠를 수 없습니다.", "error");
+      return;
+    }
+    save.disabled = true;
+    save.textContent = "저장 중…";
+    const { data, error } = await supabase.rpc("save_managed_teacher", {
+      p_teacher_id: teacher?.id || null,
+      p_name: name.value.trim(),
+      p_active: active.value === "true",
+      p_default_rate: Number(rate.value),
+      p_salary_target: salary.value === "true",
+      p_start_date: start.value || null,
+      p_end_date: end.value || null,
+      p_memo: memo.value.trim() || null,
+      p_expected_version: editing ? Number(teacher.version) : null,
+      p_request_id: crypto.randomUUID(),
+    });
+    save.disabled = false;
+    save.textContent = "저장";
+    if (error) {
+      showNotice(normalizeError(error), "error");
+      return;
+    }
+    dismiss();
+    state.salaryReady = false;
+    state.studentReference = null;
+    showNotice(`${data?.name || name.value} 원장 정보를 저장했습니다.`, "success");
+    await loadTeacherWorkspace();
+    try {
+      await loadStudentReferenceData();
+    } catch {
+      showNotice("원장 정보는 저장됐습니다. 학생 선택 목록은 화면을 새로고침하면 반영됩니다.", "warning");
+    }
+  });
+  name.focus();
 }
 
 async function boot() {

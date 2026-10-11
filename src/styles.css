@@ -256,6 +256,33 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .salary-kpis { grid-template-columns: repeat(4, 1fr); }
 .salary-panel-header { align-items: center; }
 .salary-panel-title { color: var(--navy); font-size: 14px; white-space: nowrap; }
+
+.teacher-eyebrow { color: #0f766e; }
+.teacher-action-button { min-height: 42px; padding: 0 17px; border: 0; border-radius: 10px; color: #fff; background: #0f766e; font-weight: 850; box-shadow: 0 8px 18px rgba(15,118,110,0.18); }
+.teacher-action-button:hover { background: #0b5f59; }
+.teacher-action-button:disabled { cursor: wait; opacity: 0.62; }
+.teacher-health { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 999px; color: #6f5a20; background: #fff3cf; font-size: 12px; font-weight: 850; }
+.teacher-health.healthy { color: #146b42; background: #e5f7ec; }
+.teacher-health.warning { color: #9b3a32; background: #fde9e7; }
+.teacher-kpis { grid-template-columns: repeat(4,1fr); }
+.teacher-toolbar { align-items: center; }
+.teacher-table .teacher-name { color: #174f91; font-weight: 850; }
+.teacher-table .teacher-updated { color: #798397; font-size: 11px; line-height: 1.5; white-space: pre-line; }
+.teacher-table .teacher-empty { padding: 44px 18px; color: #7a8598; text-align: center; }
+.teacher-panel-title { color: var(--navy); font-size: 14px; }
+.teacher-audit-head { align-items: center; }
+.teacher-audit-list { display: grid; }
+.teacher-audit-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; padding: 15px 18px; border-top: 1px solid #edf0f4; }
+.teacher-audit-row:first-child { border-top: 0; }
+.teacher-audit-memo { margin: 5px 0 0; color: #697386; font-size: 12px; }
+.teacher-audit-meta { color: #8791a2; font-size: 11px; white-space: nowrap; }
+.teacher-audit-empty { margin: 0; padding: 36px 18px; color: #7a8598; text-align: center; }
+.teacher-modal { width: min(100%,760px); }
+.teacher-modal-icon { color: #0f766e; background: #e2f5f2; }
+.teacher-form-grid { padding: 24px 26px 6px; }
+.teacher-form-grid .field-wide { grid-column: 1 / -1; }
+.teacher-memo-input { min-height: 92px; padding-top: 11px; resize: vertical; }
+.teacher-modal-warning { grid-column: 1 / -1; margin: 0; padding: 11px 13px; border-radius: 9px; color: #82520a; background: #fff3d3; font-size: 12px; line-height: 1.5; }
 .salary-batch-form { display: grid; grid-template-columns: 0.85fr 0.85fr 1.5fr auto; align-items: end; gap: 14px; padding: 20px; }
 .salary-filter-toolbar { align-items: center; }
 .salary-filter-toolbar .search-wrap { min-width: 230px; }
@@ -417,6 +444,7 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .student-request-modal .field-wide { grid-column: auto; }
   .vacation-request-modal .field-wide { grid-column: auto; }
   .sibling-request-modal .field-wide { grid-column: auto; }
+  .teacher-form-grid .field-wide { grid-column: auto; }
   .vacation-period-item { grid-template-columns: 1fr; }
   .vacation-period-actions { justify-content: flex-start; }
   .sibling-group-list { grid-template-columns: 1fr; }
