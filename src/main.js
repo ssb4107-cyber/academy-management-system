@@ -1890,6 +1890,7 @@ async function calculateSalaryMonth(month, button) {
     showNotice("계산할 월을 선택해주세요.", "error");
     return;
   }
+  if (state.salaryCalculationMonth && state.salaryCalculationMonth !== month) state.salaryPreviewOptions = {};
   state.salaryCalculationMonth = month;
   button.disabled = true;
   button.textContent = "계산 중…";
@@ -1993,11 +1994,13 @@ function openSalaryPreviewOptions(preview) {
   body.append(element("h3", "salary-options-title", "원장이 직접 받은 학생 제외"));
   const exclusionList = element("div", "salary-exclusion-list");
   const excludedIds = new Set(saved.exclusions.map((item) => item.studentId));
-  (preview.data?.list || []).forEach((student) => {
+  [...(preview.data?.list || []), ...(preview.excluded || [])]
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"))
+    .forEach((student) => {
     const label = element("label", "salary-exclusion-item");
     const check = element("input");check.type = "checkbox";check.value = student.studentId;check.checked = excludedIds.has(student.studentId);
     label.append(check, element("span", "", `${student.name} · ${formatMoney(student.calculatedShare)}`));exclusionList.append(label);
-  });
+    });
   body.append(exclusionList, element("h3", "salary-options-title", "누락·공제 조정"));
   const adjustmentList = element("div", "salary-adjustment-editor");
   const draftAdjustments = saved.adjustments.map((item) => ({ ...item }));
