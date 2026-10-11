@@ -2071,7 +2071,7 @@ async function loadSalaryStatements(month) {
 }
 
 function buildSalaryPrintPages(statement, month) {
-  const rows=statement.data?.list||[];const chunks=[];const perPage=18;
+  const rows=statement.data?.list||[];const chunks=[];const perPage=14;
   if(!rows.length) chunks.push([]); else for(let i=0;i<rows.length;i+=perPage)chunks.push(rows.slice(i,i+perPage));
   return chunks.map((chunk,index)=>{
     const page=element("section","salary-print-page");
