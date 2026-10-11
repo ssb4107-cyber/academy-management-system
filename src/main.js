@@ -87,6 +87,16 @@ const state = {
   teacherQuery: "",
   teacherFilter: "",
   teacherReady: false,
+  accessUsers: [],
+  accessTeachers: [],
+  accessPermissions: [],
+  operationalSettings: [],
+  accessCounts: {},
+  accessRevisions: [],
+  accessDiagnostics: null,
+  accessUserQuery: "",
+  accessUserFilter: "",
+  accessSettingsReady: false,
 };
 
 const app = document.querySelector("#app");
@@ -228,6 +238,7 @@ function renderApp(sessionData) {
   const statisticsTab = element("button", "view-tab", "기간 통계");
   const salaryTab = element("button", "view-tab", "급여 관리");
   const teacherTab = element("button", "view-tab", "원장 관리");
+  const settingsTab = element("button", "view-tab", "설정·권한");
   studentTab.id = "student-tab";
   paymentTab.id = "payment-tab";
   requestTab.id = "request-tab";
@@ -238,6 +249,7 @@ function renderApp(sessionData) {
   statisticsTab.id = "statistics-tab";
   salaryTab.id = "salary-tab";
   teacherTab.id = "teacher-tab";
+  settingsTab.id = "settings-tab";
   studentTab.type = "button";
   paymentTab.type = "button";
   requestTab.type = "button";
@@ -248,11 +260,13 @@ function renderApp(sessionData) {
   statisticsTab.type = "button";
   salaryTab.type = "button";
   teacherTab.type = "button";
+  settingsTab.type = "button";
   cashReceiptTab.hidden = state.profile.role !== "SUPER_ADMIN";
   statisticsTab.hidden = state.profile.role !== "SUPER_ADMIN";
   salaryTab.hidden = state.profile.role !== "SUPER_ADMIN";
   teacherTab.hidden = state.profile.role !== "SUPER_ADMIN";
-  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab, cashReceiptTab, statisticsTab, salaryTab, teacherTab);
+  settingsTab.hidden = state.profile.role !== "SUPER_ADMIN";
+  viewSwitcher.append(studentTab, paymentTab, requestTab, studentRequestTab, vacationTab, siblingTab, cashReceiptTab, statisticsTab, salaryTab, teacherTab, settingsTab);
   main.append(viewSwitcher);
 
   const studentView = element("div", "view-section");
@@ -340,7 +354,9 @@ function renderApp(sessionData) {
   salaryView.hidden = true;
   const teacherView = createTeacherManagementView();
   teacherView.hidden = true;
-  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView, cashReceiptView, statisticsView, salaryView, teacherView);
+  const settingsView = createAccessSettingsView();
+  settingsView.hidden = true;
+  main.append(studentView, paymentView, requestView, studentRequestView, vacationView, siblingView, cashReceiptView, statisticsView, salaryView, teacherView, settingsView);
 
   const notice = element("p", "notice page-notice");
   notice.id = "notice";
@@ -595,6 +611,30 @@ function renderApp(sessionData) {
     if (event.target === teacherTab) return;
     teacherView.hidden = true;
     teacherTab.classList.remove("active");
+  });
+  settingsTab.addEventListener("click", async () => {
+    if (state.profile.role !== "SUPER_ADMIN") return;
+    studentView.hidden = true;
+    paymentView.hidden = true;
+    requestView.hidden = true;
+    studentRequestView.hidden = true;
+    vacationView.hidden = true;
+    siblingView.hidden = true;
+    cashReceiptView.hidden = true;
+    statisticsView.hidden = true;
+    salaryView.hidden = true;
+    teacherView.hidden = true;
+    settingsView.hidden = false;
+    settingsTab.classList.add("active");
+    [studentTab,paymentTab,requestTab,studentRequestTab,vacationTab,siblingTab,cashReceiptTab,statisticsTab,salaryTab,teacherTab]
+      .forEach((tab) => tab.classList.remove("active"));
+    showNotice("");
+    if (!state.accessSettingsReady) await loadAccessSettingsWorkspace();
+  });
+  viewSwitcher.addEventListener("click", (event) => {
+    if (event.target === settingsTab) return;
+    settingsView.hidden = true;
+    settingsTab.classList.remove("active");
   });
 }
 
@@ -1384,6 +1424,16 @@ async function openStudentRequestModal(studentId = null) {
   tuition.max = "10000000";
   tuition.step = "1";
   tuition.required = true;
+  let tuitionTouched = isEdit;
+  tuition.addEventListener("input", () => { tuitionTouched = true; });
+  const applyDefaultTuition = () => {
+    if (tuitionTouched || isEdit) return;
+    const value = grade.value.trim();
+    const fees = state.studentReference?.defaultFees || {};
+    const suggested = /초/.test(value) ? fees.elementary : /중/.test(value) ? fees.middle : /고/.test(value) ? fees.high : null;
+    if (suggested != null) tuition.value = String(Number(suggested));
+  };
+  grade.addEventListener("input", applyDefaultTuition);
   const phone = input("tel", initial?.parentPhone || "");
   phone.maxLength = 30;
   phone.placeholder = "보호자 연락처 (선택)";
@@ -4143,6 +4193,219 @@ function openTeacherModal(teacher = null) {
     }
   });
   name.focus();
+}
+
+function createAccessSettingsView() {
+  const view = element("div", "view-section");
+  const heading = element("section", "page-heading");
+  const title = element("div");
+  title.append(element("p", "eyebrow settings-eyebrow", "ACCESS & OPERATIONS"));
+  title.append(element("h1", "page-title", "설정 및 사용자 권한"));
+  title.append(element("p", "page-copy", "로그인 계정의 학생 범위와 메뉴 권한, 계산·등록 기본값을 관리합니다."));
+  const actions = element("div", "heading-actions");
+  const health = element("span", "settings-health", "설정 확인 중");
+  health.id = "settings-health";
+  const refresh = element("button", "quiet-button", "새로고침");
+  refresh.type = "button";
+  refresh.addEventListener("click", () => loadAccessSettingsWorkspace());
+  actions.append(health, refresh);
+  heading.append(title, actions);
+  view.append(heading);
+
+  const stats = element("section", "stats-grid settings-kpis");
+  [["등록 사용자", "access-total", true], ["사용 중", "access-active", false],
+    ["최고 관리자", "access-super", false], ["보호 계정", "access-protected", false]]
+    .forEach(([label, id, accent]) => {
+      const card = createStat(label, "-", accent);
+      card.querySelector(".stat-value").id = id;
+      stats.append(card);
+    });
+  view.append(stats);
+
+  const usersPanel = element("section", "student-panel");
+  const userToolbar = element("div", "toolbar settings-user-toolbar");
+  const searchWrap = element("label", "search-wrap");
+  searchWrap.append(icon("⌕", "search-icon"));
+  const search = element("input", "search-input");
+  search.type = "search";
+  search.placeholder = "사용자명 또는 이메일 검색";
+  search.value = state.accessUserQuery;
+  searchWrap.append(search);
+  const filter = element("select", "status-select");
+  [["", "전체 사용자"], ["active", "사용 중"], ["inactive", "사용 중지"], ["super", "최고 관리자"], ["manager", "관리 원장님"]]
+    .forEach(([value, label]) => { const option = element("option", "", label);option.value=value;option.selected=state.accessUserFilter===value;filter.append(option); });
+  const add = element("button", "settings-action-button", "+ 사용자 추가");
+  add.type = "button";
+  add.addEventListener("click", () => openAccessUserModal());
+  userToolbar.append(searchWrap, filter, add);
+  usersPanel.append(userToolbar);
+  const tableWrap = element("div", "table-wrap");
+  const table = element("table", "student-table access-table");
+  const thead = element("thead");
+  const head = element("tr");
+  ["사용자", "이메일", "종류·메뉴", "학생 범위", "상태", "보호", "최근 변경", ""]
+    .forEach((label) => head.append(element("th", "", label)));
+  thead.append(head);
+  const tbody = element("tbody");
+  tbody.id = "access-user-rows";
+  table.append(thead, tbody);
+  tableWrap.append(table);
+  usersPanel.append(tableWrap);
+  view.append(usersPanel);
+
+  const settingPanel = element("section", "student-panel operational-settings-panel");
+  const settingHead = element("div", "toolbar operational-settings-head");
+  const settingTitle = element("div");
+  settingTitle.append(element("strong", "settings-panel-title", "자동 운영 및 주요 정책"),
+    element("p", "settings-panel-copy", "저장 후 이후 조회·계산·신규 등록부터 적용되며 과거 확정 기록은 바뀌지 않습니다."));
+  const settingActions = element("div", "heading-actions");
+  const reset = element("button", "quiet-button", "기본값 복원");
+  reset.type = "button";
+  reset.addEventListener("click", () => saveOperationalSettingsFromView(true, reset));
+  const save = element("button", "settings-action-button", "설정 저장");
+  save.type = "button";
+  save.addEventListener("click", () => saveOperationalSettingsFromView(false, save));
+  settingActions.append(reset, save);
+  settingHead.append(settingTitle, settingActions);
+  const grid = element("div", "operational-settings-grid");
+  grid.id = "operational-settings-grid";
+  settingPanel.append(settingHead, grid);
+  view.append(settingPanel);
+
+  const audit = element("section", "student-panel settings-audit-panel");
+  const auditHead = element("div", "toolbar settings-audit-head");
+  auditHead.append(element("strong", "settings-panel-title", "최근 권한·설정 변경 이력"),
+    element("span", "request-toolbar-copy", "사용자와 운영 설정 변경이 자동 보존됩니다."));
+  const auditList = element("div", "settings-audit-list");
+  auditList.id = "settings-audit-list";
+  audit.append(auditHead, auditList);
+  view.append(audit);
+
+  let timer;
+  search.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => { state.accessUserQuery=search.value.trim();renderAccessSettingsWorkspace(); }, 200);
+  });
+  filter.addEventListener("change", () => { state.accessUserFilter=filter.value;renderAccessSettingsWorkspace(); });
+  return view;
+}
+
+async function loadAccessSettingsWorkspace() {
+  const { data, error } = await supabase.rpc("get_access_settings_workspace");
+  if (error) { showNotice(normalizeError(error), "error");return false; }
+  state.accessUsers = Array.isArray(data?.users) ? data.users : [];
+  state.accessTeachers = Array.isArray(data?.teachers) ? data.teachers : [];
+  state.accessPermissions = Array.isArray(data?.managerPermissions) ? data.managerPermissions : [];
+  state.operationalSettings = Array.isArray(data?.settings) ? data.settings : [];
+  state.accessCounts = data?.counts || {};
+  state.accessRevisions = Array.isArray(data?.recentRevisions) ? data.recentRevisions : [];
+  state.accessDiagnostics = data?.diagnostics || null;
+  state.accessSettingsReady = true;
+  renderAccessSettingsWorkspace();
+  return true;
+}
+
+function accessPermissionNames(keys) {
+  const selected = new Set(Array.isArray(keys) ? keys : []);
+  const names = state.accessPermissions.filter((item) => selected.has(item.key)).map((item) => item.label);
+  return names.length ? names.join(", ") : "표시 메뉴 없음";
+}
+
+function accessScopeText(user) {
+  if (user.role === "SUPER_ADMIN" || user.studentScope === "ALL_STUDENTS") return "모든 학생";
+  if (user.studentScope === "LINKED_TEACHER") return `${user.teacherName || "원장 미지정"} 학생`;
+  return "학생을 보지 않음";
+}
+
+function renderAccessSettingsWorkspace() {
+  const counts = state.accessCounts || {};
+  const values = {
+    "access-total": `${Number(counts.total || 0).toLocaleString("ko-KR")}명`,
+    "access-active": `${Number(counts.active || 0).toLocaleString("ko-KR")}명`,
+    "access-super": `${Number(counts.superAdmins || 0).toLocaleString("ko-KR")}명`,
+    "access-protected": `${Number(counts.protected || 0).toLocaleString("ko-KR")}명`,
+  };
+  Object.entries(values).forEach(([id,value]) => { const node=document.querySelector(`#${id}`);if(node)node.textContent=value; });
+  const health = document.querySelector("#settings-health");
+  if (health) {
+    const healthy = state.accessDiagnostics?.healthy !== false;
+    health.textContent = healthy ? "권한·설정 정상" : "권한·설정 점검 필요";
+    health.className = healthy ? "settings-health healthy" : "settings-health warning";
+  }
+
+  const query = state.accessUserQuery.toLowerCase();
+  const users = state.accessUsers.filter((user) => {
+    if (query && !`${user.name || ""} ${user.email || ""}`.toLowerCase().includes(query)) return false;
+    if (state.accessUserFilter === "active" && !user.active) return false;
+    if (state.accessUserFilter === "inactive" && user.active) return false;
+    if (state.accessUserFilter === "super" && user.role !== "SUPER_ADMIN") return false;
+    if (state.accessUserFilter === "manager" && user.role !== "MANAGER") return false;
+    return true;
+  });
+  const tbody = document.querySelector("#access-user-rows");
+  if (tbody) {
+    tbody.replaceChildren();
+    if (!users.length) {
+      const tr=element("tr");const td=element("td","access-empty","조건에 맞는 사용자가 없습니다.");td.colSpan=8;tr.append(td);tbody.append(tr);
+    } else users.forEach((user) => {
+      const tr=element("tr");
+      tr.append(element("td","access-user-name",user.name||"-"),element("td","",user.email||"-"));
+      const role=element("td");
+      role.append(element("strong","access-role",user.role==="SUPER_ADMIN"?"최고 관리자":"관리 원장님"),
+        element("span","access-permissions",user.role==="SUPER_ADMIN"?"모든 메뉴":accessPermissionNames(user.permissionKeys)));
+      const status=element("td");status.append(element("span",user.active?"status-badge active":"status-badge",user.active?"사용 중":"사용 중지"));
+      const protect=element("td");protect.append(element("span",user.protected?"access-protected-badge":"access-current-badge",user.protected?"비상 관리자":user.current?"현재 계정":"-"));
+      tr.append(role,element("td","",accessScopeText(user)),status,protect,
+        element("td","teacher-updated",`${user.updatedAt||user.createdAt||"-"}${user.updatedBy?`\n${user.updatedBy}`:""}`));
+      const action=element("td");const edit=element("button","table-action-button","수정");edit.type="button";edit.addEventListener("click",()=>openAccessUserModal(user));action.append(edit);tr.append(action);tbody.append(tr);
+    });
+  }
+
+  const grid=document.querySelector("#operational-settings-grid");
+  if(grid){grid.replaceChildren();state.operationalSettings.forEach((setting)=>{
+    const card=element("label","operational-setting-card");
+    const head=element("div","operational-setting-head");head.append(element("strong","",setting.label));
+    if(setting.modified)head.append(element("span","setting-modified",`기본값 ${Number(setting.defaultValue).toLocaleString("ko-KR")}`));
+    const input=element("input","text-input operational-setting-input");input.type="number";input.step="1";input.min=String(setting.min);input.max=String(setting.max);input.value=String(setting.value);input.dataset.settingKey=setting.key;input.dataset.version=String(setting.version);
+    card.append(head,element("span","operational-setting-description",setting.description||""),input,
+      element("span","operational-setting-range",`허용 범위 ${Number(setting.min).toLocaleString("ko-KR")} ~ ${Number(setting.max).toLocaleString("ko-KR")}`));grid.append(card);
+  });}
+  const audit=document.querySelector("#settings-audit-list");
+  if(audit){audit.replaceChildren();if(!state.accessRevisions.length)audit.append(element("p","settings-audit-empty","아직 Supabase에서 변경한 권한·설정 기록이 없습니다."));else state.accessRevisions.forEach((revision)=>{
+    const labels={USER_CREATE:"사용자 등록",USER_UPDATE:"사용자 수정",SETTINGS_UPDATE:"운영 설정 저장",SETTINGS_RESET:"기본값 복원"};
+    const row=element("article","settings-audit-row");const copy=element("div");copy.append(element("strong","",labels[revision.action]||revision.action),element("p","settings-audit-memo",revision.memo||revision.targetId||""));row.append(copy,element("span","settings-audit-meta",`${revision.createdAt||""} · ${revision.actorEmail||""}`));audit.append(row);
+  });}
+}
+
+function openAccessUserModal(user = null) {
+  const editing=Boolean(user);const locked=Boolean(user?.protected||user?.current);
+  const backdrop=element("div","modal-backdrop");const dialog=element("section","student-modal access-user-modal");dialog.setAttribute("role","dialog");dialog.setAttribute("aria-modal","true");
+  const header=element("header","modal-header");const heading=element("div","modal-title-wrap");heading.append(element("span","modal-title-icon settings-modal-icon","⚙"),element("h2","modal-title",editing?"사용자 설정 수정":"사용자 추가"));const close=element("button","modal-close","×");close.type="button";header.append(heading,close);
+  const form=element("form","access-user-form");const fields=element("div","request-form-grid access-user-form-grid");
+  const email=element("input","text-input");email.type="email";email.required=true;email.maxLength=120;email.value=user?.email||"";email.readOnly=locked;
+  const identity=element("select","text-input");const blank=element("option","","원장을 선택하세요");blank.value="";identity.append(blank);
+  state.accessTeachers.filter((item)=>item.active||item.id===user?.teacherId).forEach((item)=>{const option=element("option","",`${item.name}${item.active?"":" (사용 중지)"}`);option.value=`TEACHER:${item.id}`;option.selected=item.id===user?.teacherId;identity.append(option);});
+  const custom=element("option","","원장과 연결하지 않음");custom.value="CUSTOM";custom.selected=editing&&!user?.teacherId;identity.append(custom);
+  const name=element("input","text-input");name.maxLength=40;name.value=user?.teacherId?"":(user?.name||"");
+  const role=element("select","text-input");[["MANAGER","관리 원장님"],["SUPER_ADMIN","최고 관리자"]].forEach(([value,label])=>{const option=element("option","",label);option.value=value;option.selected=value===(user?.role||"MANAGER");role.append(option);});role.disabled=locked;
+  const active=element("select","text-input");[["true","사용 중"],["false","사용 중지"]].forEach(([value,label])=>{const option=element("option","",label);option.value=value;option.selected=value===String(user?.active??true);active.append(option);});active.disabled=locked;
+  const scope=element("select","text-input");[["NONE","학생을 보지 않음"],["LINKED_TEACHER","선택한 원장의 학생만"],["ALL_STUDENTS","모든 학생"]].forEach(([value,label])=>{const option=element("option","",label);option.value=value;option.selected=value===(user?.studentScope||"NONE");scope.append(option);});
+  fields.append(salaryFormField("로그인 이메일",email),salaryFormField("사용자 연결",identity),salaryFormField("별도 사용자 이름",name),salaryFormField("사용자 종류",role),salaryFormField("사용 상태",active),salaryFormField("볼 수 있는 학생",scope));
+  const permissionBox=element("fieldset","access-permission-box field-wide");permissionBox.append(element("legend","","이 사용자에게 보여줄 메뉴"));const permissionGrid=element("div","access-permission-grid");const selected=new Set(user?.permissionKeys||state.accessPermissions.map((item)=>item.key));state.accessPermissions.forEach((item)=>{const label=element("label","access-permission-item");const checkbox=element("input");checkbox.type="checkbox";checkbox.value=item.key;checkbox.checked=selected.has(item.key);label.append(checkbox,element("span","",item.label));permissionGrid.append(label);});permissionBox.append(permissionGrid);fields.append(permissionBox);
+  const hint=element("p","access-user-hint field-wide",locked?"비상 관리자 또는 현재 로그인 계정의 이메일·사용자 종류·사용 상태는 보호됩니다.":"원장을 선택하면 해당 원장의 학생만 보도록 자동 설정됩니다.");fields.append(hint);
+  const sync=()=>{const choice=identity.value;const linked=choice.startsWith("TEACHER:");const customMode=choice==="CUSTOM";name.disabled=!customMode;if(!customMode)name.value="";if(role.value==="SUPER_ADMIN"){scope.value="ALL_STUDENTS";scope.disabled=true;}else if(linked){scope.value="LINKED_TEACHER";scope.disabled=true;}else{if(scope.value==="LINKED_TEACHER")scope.value="NONE";scope.disabled=!customMode;}permissionGrid.querySelectorAll("input").forEach((box)=>{box.disabled=role.value==="SUPER_ADMIN";});permissionBox.classList.toggle("disabled",role.value==="SUPER_ADMIN");};identity.addEventListener("change",sync);role.addEventListener("change",sync);sync();
+  const footer=element("footer","modal-footer");const cancel=element("button","secondary-button","취소");cancel.type="button";const save=element("button","settings-action-button","저장");save.type="submit";footer.append(cancel,save);form.append(fields,footer);dialog.append(header,form);backdrop.append(dialog);document.body.append(backdrop);document.body.classList.add("modal-open");
+  const dismiss=()=>{backdrop.remove();document.body.classList.remove("modal-open");};close.addEventListener("click",dismiss);cancel.addEventListener("click",dismiss);backdrop.addEventListener("click",(event)=>{if(event.target===backdrop)dismiss();});
+  form.addEventListener("submit",async(event)=>{event.preventDefault();const choice=identity.value;if(!choice){showNotice("원장을 선택하거나 원장과 연결하지 않음을 선택해주세요.","error");return;}const teacherId=choice.startsWith("TEACHER:")?choice.slice(8):null;const customMode=choice==="CUSTOM";if(customMode&&!name.value.trim()){showNotice("별도 사용자 이름을 입력해주세요.","error");return;}save.disabled=true;save.textContent="저장 중…";const{data,error}=await supabase.rpc("save_managed_user_access",{p_user_key:user?.id||null,p_email:email.value.trim(),p_display_name:name.value.trim()||null,p_identity_mode:customMode?"CUSTOM":"TEACHER",p_teacher_id:teacherId,p_student_scope:scope.value,p_role:role.value,p_active:active.value==="true",p_permissions:[...permissionGrid.querySelectorAll("input:checked")].map((box)=>box.value),p_expected_version:editing?Number(user.version):null,p_request_id:crypto.randomUUID()});save.disabled=false;save.textContent="저장";if(error){showNotice(normalizeError(error),"error");return;}dismiss();if(data?.email===state.profile.email){state.profile.displayName=data.name;const accountName=document.querySelector(".account-name");if(accountName)accountName.textContent=data.name;}showNotice(`${data?.name||email.value} 사용자 설정을 저장했습니다.`,"success");state.studentReference=null;await loadAccessSettingsWorkspace();});
+  email.focus();
+}
+
+async function saveOperationalSettingsFromView(reset, button) {
+  if (!window.confirm(reset?"모든 운영 규칙을 프로그램 기본값으로 복원할까요?":"운영 규칙과 기본값을 저장할까요?")) return;
+  const values={};const versions={};state.operationalSettings.forEach((setting)=>{const input=document.querySelector(`[data-setting-key="${setting.key}"]`);values[setting.key]=reset?Number(setting.defaultValue):Number(input?.value);versions[setting.key]=Number(setting.version);});
+  button.disabled=true;const original=button.textContent;button.textContent=reset?"복원 중…":"저장 중…";
+  const{data,error}=await supabase.rpc("save_operational_settings",{p_values:values,p_expected_versions:versions,p_request_id:crypto.randomUUID(),p_reset:reset});button.disabled=false;button.textContent=original;
+  if(error){showNotice(normalizeError(error),"error");return;}showNotice(reset?"운영 설정을 기본값으로 복원했습니다.":`운영 설정을 저장했습니다. 변경 ${Number(data?.changed||0)}건`,"success");state.studentReference=null;await loadAccessSettingsWorkspace();
 }
 
 async function boot() {
