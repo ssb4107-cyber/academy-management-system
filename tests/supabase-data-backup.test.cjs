@@ -35,7 +35,7 @@ assert.match(main, /"검증 백업 및 외부 보관"/);
 assert.match(main, /supabase\.rpc\("get_data_backup_workspace"/);
 assert.match(main, /supabase\.rpc\("create_verified_data_backup"/);
 assert.match(main, /supabase\.rpc\("verify_data_backup"/);
-assert.match(main, /supabase\.rpc\("preview_data_backup_restore"/);
+assert.match(main, /supabase\.rpc\("prepare_data_backup_restore"/);
 assert.match(main, /supabase\.rpc\("download_data_backup"/);
 assert.match(main, /new Blob\(\[JSON\.stringify/);
 assert.match(styles, /\.data-backup-row/);

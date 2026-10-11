@@ -1,0 +1,63 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const migration = fs.readFileSync(path.join(root, "supabase", "migrations", "20261011212510_add_guarded_data_restore.sql"), "utf8");
+const hardening = fs.readFileSync(path.join(root, "supabase", "migrations", "20261011213006_harden_data_restore_metadata.sql"), "utf8");
+const main = fs.readFileSync(path.join(root, "src", "main.js"), "utf8");
+const styles = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8");
+
+assert.match(migration, /create table if not exists academy_app\.backup_restore_approvals/i);
+assert.match(migration, /create table if not exists academy_app\.data_restore_runs/i);
+assert.match(migration, /token_hash text not null unique/i);
+assert.doesNotMatch(migration, /^\s+restore_token text/im, "Plain restore tokens must never be persisted");
+assert.match(migration, /alter table academy_app\.backup_restore_approvals enable row level security/i);
+assert.match(migration, /alter table academy_app\.backup_restore_approvals force row level security/i);
+assert.match(migration, /revoke all on table academy_app\.backup_restore_approvals from public,anon,authenticated/i);
+assert.match(migration, /create or replace function academy_app\.prepare_data_backup_restore_internal/i);
+assert.match(migration, /create or replace function academy_app\.execute_data_backup_restore_internal/i);
+assert.match(migration, /create or replace function public\.prepare_data_backup_restore/i);
+assert.match(migration, /create or replace function public\.execute_data_backup_restore/i);
+assert.match(migration, /academy_app\.settings_admin_email\(\)/i);
+assert.match(migration, /interval '5 minutes'/i);
+assert.match(migration, /used_at is null and expires_at>now\(\)/i);
+assert.match(migration, /current_checksum/i);
+assert.match(migration, /미리보기 이후 데이터가 변경되었습니다/);
+assert.match(migration, /현재 최고 관리자 계정이 없어 복원할 수 없습니다/);
+assert.match(migration, /보호된 최고 관리자 계정이 없는 백업은 복원할 수 없습니다/);
+assert.match(migration, /pg_advisory_xact_lock/i);
+assert.match(migration, /in access exclusive mode/i);
+assert.match(migration, /'PRE_RESTORE','복원 직전 자동 백업'/);
+assert.match(migration, /truncate table[\s\S]*academy_app\.monthly_student_facts/i);
+assert.match(migration, /academy_app\.salary_operation_requests/i);
+assert.match(migration, /academy_app\.settings_operation_requests/i);
+assert.match(migration, /academy_app\.teacher_operation_requests/i);
+assert.match(migration, /v_after_checksum<>v_blob\.checksum/i);
+assert.match(migration, /모든 변경을 취소했습니다/);
+assert.match(migration, /request_id uuid not null unique/i);
+assert.match(migration, /duplicateRequest/i);
+assert.match(migration, /revoke all on function public\.execute_data_backup_restore\(uuid,text,text,uuid\) from public,anon/i);
+assert.match(migration, /grant execute on function public\.execute_data_backup_restore\(uuid,text,text,uuid\) to authenticated/i);
+assert.match(hardening, /academy_backup_restore_approvals_no_direct_access/i);
+assert.match(hardening, /for all to authenticated using\(false\) with check\(false\)/i);
+assert.match(hardening, /academy_backup_restore_approvals_backup_idx/i);
+assert.match(hardening, /academy_data_restore_runs_backup_idx/i);
+assert.match(hardening, /academy_data_restore_runs_pre_backup_idx/i);
+
+const restoredTables = [...migration.matchAll(/insert into academy_app\.([a-z_]+) select \* from jsonb_populate_recordset/g)].map((match) => match[1]);
+assert.equal(restoredTables.length, 27, "All 27 backed-up tables must be restored");
+assert.equal(new Set(restoredTables).size, 27, "Restore table list must not contain duplicates");
+
+assert.match(main, /supabase\.rpc\("prepare_data_backup_restore"/);
+assert.match(main, /supabase\.rpc\("execute_data_backup_restore"/);
+assert.match(main, /supabase\.rpc\("get_data_restore_history"/);
+assert.match(main, /p_restore_token:preview\.restoreToken/);
+assert.match(main, /p_confirmation_text:phrase\.trim\(\)/);
+assert.match(main, /p_request_id:crypto\.randomUUID\(\)/);
+assert.match(main, /window\.location\.reload\(\)/);
+assert.match(main, /복원 직전 백업도 자동 저장했습니다/);
+assert.match(styles, /\.backup-restore-execute/);
+assert.match(styles, /\.backup-restore-history-row/);
+
+console.log(JSON.stringify({ status: "PASS", checks: 48, feature: "guarded transactional Supabase data restore" }));

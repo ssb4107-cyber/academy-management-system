@@ -105,6 +105,8 @@ const state = {
   backupSummary: {},
   dataBackups: [],
   backupPreview: null,
+  restoreSummary: {},
+  restoreRuns: [],
 };
 
 const app = document.querySelector("#app");
@@ -4341,14 +4343,15 @@ function createAccessSettingsView() {
   const backupHead = element("div", "toolbar operational-settings-head");
   const backupTitle = element("div");
   backupTitle.append(element("strong", "settings-panel-title", "검증 백업 및 외부 보관"),
-    element("p", "settings-panel-copy", "자정에 백업 주기를 확인하며, 같은 내용은 한 번만 저장합니다. 검증된 JSON은 PC에도 보관할 수 있습니다."));
+    element("p", "settings-panel-copy", "자정에 백업 주기를 확인하며, 같은 내용은 한 번만 저장합니다. 복원 전에는 현재 상태를 자동 보존하고 전체 검증을 통과해야 반영합니다."));
   const createBackup = element("button", "settings-action-button", "지금 백업");
   createBackup.type="button";createBackup.addEventListener("click",()=>createVerifiedBackup(createBackup));
   backupHead.append(backupTitle,createBackup);
   const backupSummary = element("div","backup-summary-grid");backupSummary.id="backup-summary-grid";
   const backupList = element("div","data-backup-list");backupList.id="data-backup-list";
   const backupPreview = element("div","backup-preview-box");backupPreview.id="backup-preview-box";
-  backupPanel.append(backupHead,backupSummary,backupPreview,backupList);view.append(backupPanel);
+  const restoreHistory = element("div","backup-restore-history");restoreHistory.id="backup-restore-history";
+  backupPanel.append(backupHead,backupSummary,backupPreview,restoreHistory,backupList);view.append(backupPanel);
 
   const errorPanel = element("section", "student-panel client-error-panel");
   const errorHead = element("div", "toolbar operational-settings-head");
@@ -4395,14 +4398,16 @@ function createAccessSettingsView() {
 }
 
 async function loadAccessSettingsWorkspace() {
-  const [{ data, error }, { data: operations, error: operationsError }, { data: backups, error: backupsError }] = await Promise.all([
+  const [{ data, error }, { data: operations, error: operationsError }, { data: backups, error: backupsError }, { data: restores, error: restoresError }] = await Promise.all([
     supabase.rpc("get_access_settings_workspace"),
     supabase.rpc("get_operations_diagnostics_workspace"),
     supabase.rpc("get_data_backup_workspace"),
+    supabase.rpc("get_data_restore_history"),
   ]);
   if (error) { showNotice(normalizeError(error), "error");return false; }
   if (operationsError) { showNotice(normalizeError(operationsError, "운영 진단 조회"), "error");return false; }
   if (backupsError) { showNotice(normalizeError(backupsError, "검증 백업 조회"), "error");return false; }
+  if (restoresError) { showNotice(normalizeError(restoresError, "복원 이력 조회"), "error");return false; }
   state.accessUsers = Array.isArray(data?.users) ? data.users : [];
   state.accessTeachers = Array.isArray(data?.teachers) ? data.teachers : [];
   state.accessPermissions = Array.isArray(data?.managerPermissions) ? data.managerPermissions : [];
@@ -4416,6 +4421,8 @@ async function loadAccessSettingsWorkspace() {
   state.clientErrors = Array.isArray(operations?.errors) ? operations.errors : [];
   state.backupSummary = backups?.summary || {};
   state.dataBackups = Array.isArray(backups?.backups) ? backups.backups : [];
+  state.restoreSummary = restores?.summary || {};
+  state.restoreRuns = Array.isArray(restores?.runs) ? restores.runs : [];
   state.accessSettingsReady = true;
   renderAccessSettingsWorkspace();
   return true;
@@ -4512,14 +4519,17 @@ function renderDataBackups() {
     ["고유 저장본",`${Number(summary.uniqueContentCount||0).toLocaleString("ko-KR")}개`],
     ["백업 사용량",formatBytes(summary.storedPayloadBytes)],
     ["전체 DB 크기",formatBytes(summary.databaseBytes)],
+    ["완료된 복원",`${Number(state.restoreSummary?.restoreCount||0).toLocaleString("ko-KR")}회`],
   ].forEach(([label,value])=>{const card=element("article","operations-summary-card");card.append(element("span","",label),element("strong","",value));summaryGrid.append(card);});}
   const previewBox=document.querySelector("#backup-preview-box");
   if(previewBox){previewBox.replaceChildren();const preview=state.backupPreview;if(preview){
     previewBox.append(element("strong","",preview.matchesCurrent?"현재 데이터와 동일한 백업입니다.":`복구 시 달라지는 영역 ${Number(preview.changedTables||0)}개`));
     const changed=(Array.isArray(preview.tables)?preview.tables:[]).filter((item)=>item.changed);
     if(changed.length){const grid=element("div","backup-impact-grid");changed.forEach((item)=>{const row=element("div","backup-impact-row");row.append(element("code","",item.table),element("span","",`현재 ${Number(item.currentRows||0).toLocaleString("ko-KR")}행 → 백업 ${Number(item.backupRows||0).toLocaleString("ko-KR")}행`));grid.append(row);});previewBox.append(grid);}
-    previewBox.append(element("p","backup-preview-note","이 미리보기는 데이터 변경 없이 비교만 수행했습니다. 실제 복구 기능은 별도 안전 단계에서 연결됩니다."));
+    previewBox.append(element("p","backup-preview-note",`승인값은 ${preview.expiresAt||"5분 뒤"}까지 한 번만 유효합니다. 실행 직전에 현재 상태를 자동 백업하며, 오류가 나면 모든 변경을 취소합니다.`));
+    if(preview.restoreToken){const execute=element("button","danger-button backup-restore-execute","이 백업으로 복원");execute.type="button";execute.addEventListener("click",()=>executeDataBackupRestore(preview,execute));previewBox.append(execute);}
   }}
+  const history=document.querySelector("#backup-restore-history");if(history){history.replaceChildren();if(state.restoreRuns.length){history.append(element("strong","backup-history-title","최근 복원 이력"));state.restoreRuns.slice(0,5).forEach((run)=>{const row=element("div","backup-restore-history-row");row.append(element("span","",`${run.completedAt||"-"} · ${Number(run.restoredRows||0).toLocaleString("ko-KR")}행 · 변경 영역 ${Number(run.changedTables||0)}개`),element("code","backup-checksum",String(run.afterChecksum||"").slice(0,12)));history.append(row);});}}
   const list=document.querySelector("#data-backup-list");if(!list)return;list.replaceChildren();
   if(!state.dataBackups.length){list.append(element("p","settings-audit-empty","아직 생성된 Supabase 검증 백업이 없습니다."));return;}
   state.dataBackups.forEach((backup)=>{
@@ -4530,7 +4540,7 @@ function renderDataBackups() {
       element("code","backup-checksum",backup.checksum||"-"));
     const actions=element("div","data-backup-actions");
     const verify=element("button","table-action-button","다시 검증");verify.type="button";verify.addEventListener("click",()=>verifyDataBackup(backup,verify));
-    const preview=element("button","table-action-button","복구 영향");preview.type="button";preview.addEventListener("click",()=>previewDataBackup(backup,preview));
+    const preview=element("button","table-action-button","복원 준비");preview.type="button";preview.addEventListener("click",()=>previewDataBackup(backup,preview));
     const download=element("button","table-action-button","JSON 저장");download.type="button";download.addEventListener("click",()=>downloadDataBackup(backup,download));
     actions.append(verify,preview,download);row.append(copy,actions);list.append(row);
   });
@@ -4550,8 +4560,24 @@ async function verifyDataBackup(backup,button) {
 }
 
 async function previewDataBackup(backup,button) {
-  button.disabled=true;button.textContent="비교 중…";const{data,error}=await supabase.rpc("preview_data_backup_restore",{p_backup_id:backup.backupId});button.disabled=false;button.textContent="복구 영향";
-  if(error){showNotice(normalizeError(error,"백업 복구 영향 비교"),"error");return;}state.backupPreview=data||null;renderDataBackups();document.querySelector("#backup-preview-box")?.scrollIntoView({behavior:"smooth",block:"center"});
+  button.disabled=true;button.textContent="준비 중…";const{data,error}=await supabase.rpc("prepare_data_backup_restore",{p_backup_id:backup.backupId});button.disabled=false;button.textContent="복원 준비";
+  if(error){showNotice(normalizeError(error,"백업 복원 준비"),"error");return;}state.backupPreview=data||null;renderDataBackups();document.querySelector("#backup-preview-box")?.scrollIntoView({behavior:"smooth",block:"center"});
+}
+
+async function executeDataBackupRestore(preview,button) {
+  const changed=Number(preview.changedTables||0);const rows=Number(preview.backupManifest?.rowCount||0);
+  if(!window.confirm(`검증 백업 ${rows.toLocaleString("ko-KR")}행으로 복원합니다.\n달라지는 영역: ${changed}개\n\n현재 상태는 먼저 자동 백업되고, 복원이 끝날 때까지 업무 입력이 잠시 멈춥니다. 계속할까요?`))return;
+  const phrase=window.prompt(`마지막 확인입니다. 아래 문구를 그대로 입력하세요.\n\n${preview.confirmationText||""}`,"");
+  if(phrase===null)return;if(phrase.trim()!==preview.confirmationText){showNotice("복원 확인 문구가 일치하지 않습니다.","error");return;}
+  button.disabled=true;button.textContent="복원 및 검증 중…";
+  const{data,error}=await supabase.rpc("execute_data_backup_restore",{
+    p_backup_id:preview.backupId,p_restore_token:preview.restoreToken,
+    p_confirmation_text:phrase.trim(),p_request_id:crypto.randomUUID(),
+  });
+  if(error){button.disabled=false;button.textContent="이 백업으로 복원";showNotice(normalizeError(error,"백업 복원"),"error");return;}
+  state.backupPreview=null;
+  window.alert(`복원이 완료되었습니다.\n${Number(data?.restoredRows||0).toLocaleString("ko-KR")}행 검증 완료\n복원 직전 백업도 자동 저장했습니다.`);
+  window.location.reload();
 }
 
 async function downloadDataBackup(backup,button) {
