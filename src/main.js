@@ -77,6 +77,9 @@ const state = {
   salaryStatus: "",
   salaryQuery: "",
   salaryReady: false,
+  salaryCalculationMonth: "",
+  salaryPreview: null,
+  salaryPreviewOptions: {},
 };
 
 const app = document.querySelector("#app");
@@ -1487,6 +1490,36 @@ function createSalaryView() {
     });
   view.append(stats);
 
+  const calculationPanel = element("section", "student-panel salary-calculation-panel");
+  const calculationHeader = element("div", "toolbar salary-panel-header");
+  calculationHeader.append(element("strong", "salary-panel-title", "월별 급여 자동 계산·확정"),
+    element("p", "request-toolbar-copy", "담당 기간·휴가·실수납·특강 매출과 3.3% 세금을 서버에서 다시 계산합니다."));
+  calculationPanel.append(calculationHeader);
+  const calculationControls = element("div", "salary-calculation-controls");
+  const calculationMonth = element("input", "text-input");
+  calculationMonth.type = "month";
+  calculationMonth.id = "salary-calculation-month";
+  calculationMonth.value = state.salaryCalculationMonth || todayInputValue().slice(0, 7);
+  const calculateButton = element("button", "salary-action-button", "급여 계산");
+  calculateButton.type = "button";
+  calculateButton.addEventListener("click", () => calculateSalaryMonth(calculationMonth.value, calculateButton));
+  const finalizeButton = element("button", "primary-action-button", "미확정 전체 확정");
+  finalizeButton.type = "button";
+  finalizeButton.id = "salary-finalize-all";
+  finalizeButton.disabled = true;
+  finalizeButton.addEventListener("click", () => finalizeSalaryPreviews(null, finalizeButton));
+  const outputButton = element("button", "quiet-button", "인쇄·PDF·이미지");
+  outputButton.type = "button";
+  outputButton.id = "salary-output-open";
+  outputButton.addEventListener("click", () => openSalaryOutputModal(calculationMonth.value));
+  calculationControls.append(salaryFormField("계산 월", calculationMonth), calculateButton, finalizeButton, outputButton);
+  calculationPanel.append(calculationControls);
+  const calculationResults = element("div", "salary-preview-grid");
+  calculationResults.id = "salary-preview-grid";
+  calculationResults.append(element("p", "vacation-empty", "월을 선택하고 급여 계산을 실행해주세요."));
+  calculationPanel.append(calculationResults);
+  view.append(calculationPanel);
+
   const batchPanel = element("section", "student-panel salary-batch-panel");
   const batchHeader = element("div", "toolbar salary-panel-header");
   batchHeader.append(element("strong", "salary-panel-title", "월 급여 잔액 일괄 지급"),
@@ -1654,6 +1687,12 @@ function renderSalaryWorkspace() {
         ledger.addEventListener("click", () => openSalaryLedger(record));
         actionCell.append(ledger);
         if (record.status !== "취소") {
+          const statement = element("button", "table-action-button", "명세서");
+          statement.type = "button";
+          statement.addEventListener("click", () => openSalaryOutputModal(record.month, record.teacherId));
+          actionCell.append(statement);
+        }
+        if (record.status !== "취소") {
           const adjust = element("button", "table-action-button salary-adjust-button", "지급·보정");
           adjust.type = "button";
           adjust.addEventListener("click", () => openSalaryAdjustmentModal(record));
@@ -1691,7 +1730,7 @@ function renderSalaryAudit() {
     list.append(element("p", "vacation-empty", "수파베이스 전환 후 급여 변경 이력이 아직 없습니다."));
     return;
   }
-  const labels = { PAYMENT_ADD: "지급 추가", PAYMENT_SUB: "지급 차감", FINAL_ADD: "확정액 추가", FINAL_SUB: "확정액 공제", MONTH_PAYMENT: "월 일괄지급", HISTORICAL_CREATE: "과거 기록", CANCEL: "확정 취소" };
+  const labels = { PAYMENT_ADD: "지급 추가", PAYMENT_SUB: "지급 차감", FINAL_ADD: "확정액 추가", FINAL_SUB: "확정액 공제", MONTH_PAYMENT: "월 일괄지급", HISTORICAL_CREATE: "과거 기록", FINALIZE: "급여 확정", CANCEL: "확정 취소" };
   state.salaryRevisions.forEach((revision) => {
     const row = element("article", "salary-audit-row");
     const summary = element("div");
@@ -1834,6 +1873,246 @@ async function cancelSalaryRecord(record, button) {
   button.disabled=false;
   if(error){showNotice(normalizeError(error),"error");await loadSalaryWorkspace();return;}
   showNotice("급여 확정 기록을 취소하고 감사 이력에 남겼습니다.","success");await loadSalaryWorkspace();
+}
+
+function salaryOptionsPayload() {
+  return {
+    teachers: Object.entries(state.salaryPreviewOptions).map(([teacherId, value]) => ({
+      teacherId,
+      exclusions: Array.isArray(value.exclusions) ? value.exclusions : [],
+      adjustments: Array.isArray(value.adjustments) ? value.adjustments : [],
+    })),
+  };
+}
+
+async function calculateSalaryMonth(month, button) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month || "")) {
+    showNotice("계산할 월을 선택해주세요.", "error");
+    return;
+  }
+  state.salaryCalculationMonth = month;
+  button.disabled = true;
+  button.textContent = "계산 중…";
+  const { data, error } = await supabase.rpc("preview_salary_month", {
+    p_month: month,
+    p_options: salaryOptionsPayload(),
+  });
+  button.disabled = false;
+  button.textContent = "급여 계산";
+  if (error) {
+    showNotice(normalizeError(error), "error");
+    return;
+  }
+  state.salaryPreview = data;
+  renderSalaryPreviews();
+}
+
+function renderSalaryPreviews() {
+  const grid = document.querySelector("#salary-preview-grid");
+  if (!grid) return;
+  grid.replaceChildren();
+  const previews = Array.isArray(state.salaryPreview?.teachers) ? state.salaryPreview.teachers : [];
+  if (!previews.length) {
+    grid.append(element("p", "vacation-empty", "급여 정산 대상 원장 또는 계산 자료가 없습니다."));
+    return;
+  }
+  const activeSettlements = new Set(state.salaryRecords
+    .filter((record) => record.month === state.salaryCalculationMonth && record.status !== "취소")
+    .map((record) => record.teacherId));
+  previews.forEach((preview) => {
+    const card = element("article", "salary-preview-card");
+    const header = element("div", "salary-preview-head");
+    const identity = element("div");
+    identity.append(element("strong", "salary-preview-name", `${preview.teacher?.name || "-"} 원장`),
+      element("span", "salary-preview-count", `${Number(preview.data?.list?.length || 0).toLocaleString("ko-KR")}명`));
+    const status = element("span", activeSettlements.has(preview.teacher?.id) ? "salary-health healthy" : "salary-health warning",
+      activeSettlements.has(preview.teacher?.id) ? "확정됨" : "미확정");
+    header.append(identity, status);
+    const summary = element("div", "salary-preview-summary");
+    [["총 매출", preview.data?.summary?.totalRevenue], ["원장 지분", preview.data?.summary?.teacherShare],
+      ["세금 3.3%", preview.data?.summary?.tax], ["계산 급여", preview.baseAmount],
+      ["조정", preview.adjustmentAmount], ["최종 급여", preview.finalAmount]].forEach(([label, value], index) => {
+      const item = element("div", index === 5 ? "salary-preview-summary-item final" : "salary-preview-summary-item");
+      item.append(element("span", "", label), element("strong", "", formatMoney(value)));
+      summary.append(item);
+    });
+    const actions = element("div", "salary-preview-actions");
+    const edit = element("button", "table-action-button", "제외·조정");
+    edit.type = "button";
+    edit.disabled = activeSettlements.has(preview.teacher?.id);
+    edit.addEventListener("click", () => openSalaryPreviewOptions(preview));
+    const detail = element("button", "quiet-button", "학생별 보기");
+    detail.type = "button";
+    const finalize = element("button", "salary-action-button", activeSettlements.has(preview.teacher?.id) ? "확정 완료" : "이 원장 확정");
+    finalize.type = "button";
+    finalize.disabled = activeSettlements.has(preview.teacher?.id);
+    finalize.addEventListener("click", () => finalizeSalaryPreviews(preview.teacher?.id, finalize));
+    actions.append(edit, detail, finalize);
+    const details = buildSalaryPreviewTable(preview);
+    details.hidden = true;
+    detail.addEventListener("click", () => {
+      details.hidden = !details.hidden;
+      detail.textContent = details.hidden ? "학생별 보기" : "학생별 닫기";
+    });
+    card.append(header, summary, actions, details);
+    grid.append(card);
+  });
+  const finalizeAll = document.querySelector("#salary-finalize-all");
+  if (finalizeAll) finalizeAll.disabled = previews.every((item) => activeSettlements.has(item.teacher?.id));
+}
+
+function buildSalaryPreviewTable(preview) {
+  const wrap = element("div", "table-wrap salary-preview-table-wrap");
+  const table = element("table", "student-table salary-preview-table");
+  const thead = element("thead");
+  const head = element("tr");
+  ["학생", "학년", "기간", "일수", "기준", "총매출", "원장몫"].forEach((label) => head.append(element("th", "", label)));
+  thead.append(head);
+  const body = element("tbody");
+  (preview.data?.list || []).forEach((item) => {
+    const row = element("tr");
+    row.append(element("td", "", item.name || "-"), element("td", "", item.grade || "-"),
+      element("td", "", item.dateRange || "-"), element("td", "statistics-number", String(item.activeDays ?? "-")),
+      element("td", "", item.calculationBasis || "-"), element("td", "statistics-number", formatMoney(item.totalRowRevenue)),
+      element("td", "statistics-number", formatMoney(item.calculatedShare)));
+    body.append(row);
+  });
+  table.append(thead, body);wrap.append(table);return wrap;
+}
+
+function openSalaryPreviewOptions(preview) {
+  const saved = state.salaryPreviewOptions[preview.teacher.id] || { exclusions: [], adjustments: [] };
+  const backdrop = element("div", "modal-backdrop");
+  const dialog = element("section", "student-modal salary-options-modal");
+  dialog.setAttribute("role", "dialog");dialog.setAttribute("aria-modal", "true");
+  const header = element("header", "modal-header");
+  const title = element("div");title.append(element("h2", "modal-title", "직접수령 제외·급여 조정"),
+    element("p", "modal-student-name", `${state.salaryCalculationMonth} · ${preview.teacher.name} 원장`));
+  const close = element("button", "modal-close", "×");close.type = "button";header.append(title, close);dialog.append(header);
+  const body = element("div", "salary-options-body");
+  body.append(element("h3", "salary-options-title", "원장이 직접 받은 학생 제외"));
+  const exclusionList = element("div", "salary-exclusion-list");
+  const excludedIds = new Set(saved.exclusions.map((item) => item.studentId));
+  (preview.data?.list || []).forEach((student) => {
+    const label = element("label", "salary-exclusion-item");
+    const check = element("input");check.type = "checkbox";check.value = student.studentId;check.checked = excludedIds.has(student.studentId);
+    label.append(check, element("span", "", `${student.name} · ${formatMoney(student.calculatedShare)}`));exclusionList.append(label);
+  });
+  body.append(exclusionList, element("h3", "salary-options-title", "누락·공제 조정"));
+  const adjustmentList = element("div", "salary-adjustment-editor");
+  const draftAdjustments = saved.adjustments.map((item) => ({ ...item }));
+  const renderAdjustments = () => {
+    adjustmentList.replaceChildren();
+    if (!draftAdjustments.length) adjustmentList.append(element("p", "vacation-empty", "추가된 조정이 없습니다."));
+    draftAdjustments.forEach((item, index) => {
+      const row = element("div", "salary-adjustment-row");
+      row.append(element("span", "", `${item.type?.startsWith("SUB") ? "공제" : "추가"} · ${formatMoney(item.originAmount)}${item.isRate ? " · 배분율 적용" : ""}${item.isTax ? " · 세금 적용" : ""}`),
+        element("small", "", item.note || "메모 없음"));
+      const remove = element("button", "danger-button compact", "삭제");remove.type = "button";
+      remove.addEventListener("click", () => { draftAdjustments.splice(index, 1);renderAdjustments(); });
+      row.append(remove);adjustmentList.append(row);
+    });
+  };
+  renderAdjustments();body.append(adjustmentList);
+  const addForm = element("div", "salary-adjustment-form");
+  const kind = element("select", "text-input");[["ADD", "추가"], ["SUB", "공제"]].forEach(([value, label]) => { const option=element("option","",label);option.value=value;kind.append(option); });
+  const amount = element("input", "text-input");amount.type="number";amount.min="0";amount.max="100000000";amount.placeholder="원금";
+  const note = element("input", "text-input");note.maxLength=500;note.placeholder="조정 사유";
+  const rateLabel = element("label", "salary-check-label");const rate=element("input");rate.type="checkbox";rateLabel.append(rate,element("span","","배분율 적용"));
+  const taxLabel = element("label", "salary-check-label");const tax=element("input");tax.type="checkbox";taxLabel.append(tax,element("span","","3.3% 공제"));
+  const add = element("button", "table-action-button", "조정 추가");add.type="button";
+  add.addEventListener("click", () => {
+    if (!Number.isFinite(Number(amount.value)) || Number(amount.value) < 0 || !note.value.trim()) {
+      showNotice("조정 원금과 사유를 입력해주세요.", "error");return;
+    }
+    draftAdjustments.push({ type: kind.value, typeText: kind.value === "SUB" ? "공제" : "추가", originAmount: Number(amount.value), note: note.value.trim(), isRate: rate.checked, isTax: tax.checked });
+    amount.value="";note.value="";rate.checked=false;tax.checked=false;renderAdjustments();
+  });
+  addForm.append(kind, amount, note, rateLabel, taxLabel, add);body.append(addForm);dialog.append(body);
+  const footer=element("footer","modal-footer");const cancel=element("button","secondary-button","취소");cancel.type="button";const save=element("button","salary-action-button","다시 계산");save.type="button";footer.append(cancel,save);dialog.append(footer);
+  backdrop.append(dialog);document.body.append(backdrop);document.body.classList.add("modal-open");
+  const dismiss=()=>{backdrop.remove();document.body.classList.remove("modal-open");};close.addEventListener("click",dismiss);cancel.addEventListener("click",dismiss);
+  save.addEventListener("click",async()=>{const exclusions=[...exclusionList.querySelectorAll("input:checked")].map((input)=>({studentId:input.value,reason:"원장 직접 현금 수령(선입금)"}));state.salaryPreviewOptions[preview.teacher.id]={exclusions,adjustments:draftAdjustments};dismiss();const run=document.querySelector("#salary-calculation-panel button")||document.querySelector("#salary-finalize-all");await calculateSalaryMonth(state.salaryCalculationMonth,document.querySelector("#salary-calculation-month")?.closest(".salary-calculation-controls")?.querySelector(".salary-action-button")||run);});
+}
+
+async function finalizeSalaryPreviews(teacherId, button) {
+  const previews = (state.salaryPreview?.teachers || []).filter((item) => !teacherId || item.teacher?.id === teacherId);
+  const active = new Set(state.salaryRecords.filter((record) => record.month === state.salaryCalculationMonth && record.status !== "취소").map((record) => record.teacherId));
+  const targets = previews.filter((item) => !active.has(item.teacher?.id));
+  if (!targets.length) { showNotice("확정할 미확정 급여가 없습니다.", "error");return; }
+  const total = targets.reduce((sum,item)=>sum+Number(item.finalAmount||0),0);
+  if (!window.confirm(`${state.salaryCalculationMonth} 급여 ${targets.length}명, ${formatMoney(total)}을 확정할까요?`)) return;
+  button.disabled=true;const before=button.textContent;button.textContent="확정 중…";
+  const {data,error}=await supabase.rpc("finalize_salary_month",{p_month:state.salaryCalculationMonth,p_items:targets.map((item)=>({teacherId:item.teacher.id,exclusions:item.exclusions||[],adjustments:(state.salaryPreviewOptions[item.teacher.id]?.adjustments)||[],previewToken:item.previewToken,expectedFinalAmount:item.finalAmount})),p_request_id:crypto.randomUUID()});
+  button.disabled=false;button.textContent=before;
+  if(error){showNotice(normalizeError(error),"error");await calculateSalaryMonth(state.salaryCalculationMonth,document.querySelector("#salary-calculation-month").closest(".salary-calculation-controls").querySelector(".salary-action-button"));return;}
+  showNotice(`${data?.month||state.salaryCalculationMonth} 급여 ${Number(data?.count||0)}명, ${formatMoney(data?.totalFinalAmount)} 확정을 저장했습니다.`,"success");
+  await loadSalaryWorkspace();renderSalaryPreviews();
+}
+
+function salarySafeFileName(value) { return String(value || "급여명세서").replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_"); }
+
+function normalizeSalaryStatements(data) {
+  return (data || []).map((item) => item.settlement ? item : ({
+    settlement: { teacherId:item.teacher?.id,teacherName:item.teacher?.name,status:"미리보기",baseAmount:item.baseAmount,adjustmentAmount:item.adjustmentAmount,finalAmount:item.finalAmount,paidAmount:0,balanceAmount:item.finalAmount },
+    data:item.data,
+  }));
+}
+
+async function loadSalaryStatements(month) {
+  const {data,error}=await supabase.rpc("get_salary_statements",{p_month:month});
+  if(error) throw error;
+  const confirmed=normalizeSalaryStatements(data?.statements||[]);
+  if(confirmed.length) return confirmed;
+  if(state.salaryPreview?.month===month) return normalizeSalaryStatements(state.salaryPreview.teachers||[]);
+  const {data:preview,error:previewError}=await supabase.rpc("preview_salary_month",{p_month:month,p_options:{}});
+  if(previewError) throw previewError;
+  return normalizeSalaryStatements(preview?.teachers||[]);
+}
+
+function buildSalaryPrintPages(statement, month) {
+  const rows=statement.data?.list||[];const chunks=[];const perPage=18;
+  if(!rows.length) chunks.push([]); else for(let i=0;i<rows.length;i+=perPage)chunks.push(rows.slice(i,i+perPage));
+  return chunks.map((chunk,index)=>{
+    const page=element("section","salary-print-page");
+    const header=element("div","salary-print-header");header.append(element("div","salary-print-brand","학원관리시스템"),element("h1","",`${month.slice(0,4)}년 ${month.slice(5)}월 급여 정산서`),element("h2","",`${statement.settlement.teacherName} 원장`));page.append(header);
+    const summary=element("div","salary-print-summary");[["총 매출",statement.data?.summary?.totalRevenue],["원장 지분",statement.data?.summary?.teacherShare],["세금(3.3%)",statement.data?.summary?.tax],["조정액",statement.settlement.adjustmentAmount],["확정 급여",statement.settlement.finalAmount]].forEach(([label,value],i)=>{const box=element("div",i===4?"final":"");box.append(element("span","",label),element("strong","",formatMoney(value)));summary.append(box);});page.append(summary);
+    const table=element("table","salary-print-table");const thead=element("thead");const hr=element("tr");["이름","학년","비율","기간","일수","수강료","추가매출","총매출","원장몫","비고"].forEach(x=>hr.append(element("th","",x)));thead.append(hr);const tbody=element("tbody");chunk.forEach(item=>{const tr=element("tr");[item.name,item.grade,`${Math.round(Number(item.rate||0)*100)}%`,item.dateRange,item.activeDays,formatMoney(item.proratedRevenue),formatMoney(item.specialRevenue),formatMoney(item.totalRowRevenue),formatMoney(item.calculatedShare),item.calculationBasis].forEach((value,i)=>tr.append(element("td",i>=4&&i<=8?"number":"",String(value??"-"))));tbody.append(tr);});table.append(thead,tbody);page.append(table);
+    const footer=element("div","salary-print-footer",`${statement.settlement.status||""} · ${index+1}/${chunks.length}`);page.append(footer);return page;
+  });
+}
+
+async function renderSalaryPages(statements,month) {
+  const root=element("div","salary-print-root");statements.forEach(statement=>buildSalaryPrintPages(statement,month).forEach(page=>root.append(page)));document.body.append(root);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return root;
+}
+
+async function salaryPageCanvas(page) { const {default:html2canvas}=await import("html2canvas");return html2canvas(page,{scale:2,backgroundColor:"#ffffff",useCORS:true,logging:false}); }
+
+function downloadCanvas(canvas,name) { const link=document.createElement("a");link.download=name;link.href=canvas.toDataURL("image/png");link.click(); }
+
+async function exportSalaryOutput(statements,month,method,button) {
+  button.disabled=true;button.textContent="출력 준비 중…";const root=await renderSalaryPages(statements,month);const pages=[...root.querySelectorAll(".salary-print-page")];
+  try {
+    if(method==="print") { root.classList.add("print-active");window.addEventListener("afterprint",()=>root.remove(),{once:true});window.print();return; }
+    const grouped=new Map();statements.forEach(statement=>grouped.set(statement.settlement.teacherName,[]));pages.forEach(page=>{const name=page.querySelector("h2")?.textContent?.replace(/ 원장$/,'')||"원장";if(!grouped.has(name))grouped.set(name,[]);grouped.get(name).push(page);});
+    if(method==="image") { let index=1;for(const [name,teacherPages] of grouped)for(let i=0;i<teacherPages.length;i++){downloadCanvas(await salaryPageCanvas(teacherPages[i]),salarySafeFileName(`${month}_${name}_급여명세서_${i+1}`)+".png");index++;await new Promise(resolve=>setTimeout(resolve,120));}return; }
+    const {jsPDF}=await import("jspdf");
+    const addPages=async(pdf,teacherPages)=>{for(const teacherPage of teacherPages){const canvas=await salaryPageCanvas(teacherPage);if(pdf.__hasContent)pdf.addPage("a4","landscape");const data=canvas.toDataURL("image/jpeg",0.96);pdf.addImage(data,"JPEG",0,0,297,210,undefined,"FAST");pdf.__hasContent=true;}};
+    if(method==="pdf-separate") {for(const [name,teacherPages] of grouped){const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});await addPages(pdf,teacherPages);pdf.save(salarySafeFileName(`${month}_${name}_급여명세서`)+".pdf");await new Promise(resolve=>setTimeout(resolve,120));}return;}
+    const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});for(const teacherPages of grouped.values())await addPages(pdf,teacherPages);pdf.save(salarySafeFileName(`${month}_전체_급여명세서`)+".pdf");
+  } finally { if(method!=="print")root.remove();button.disabled=false;button.textContent="실행하기"; }
+}
+
+async function openSalaryOutputModal(month,presetTeacherId="") {
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month||"")){showNotice("출력할 월을 선택해주세요.","error");return;}
+  let statements;try{statements=await loadSalaryStatements(month);}catch(error){showNotice(normalizeError(error),"error");return;}
+  if(!statements.length){showNotice("출력할 급여 명세서가 없습니다.","error");return;}
+  const backdrop=element("div","modal-backdrop");const dialog=element("section","student-modal compact-modal salary-output-modal");dialog.setAttribute("role","dialog");dialog.setAttribute("aria-modal","true");
+  const header=element("header","modal-header");const title=element("div");title.append(element("h2","modal-title","🖨 인쇄 및 PDF·이미지 저장"),element("p","modal-student-name",`${month} 급여명세서`));const close=element("button","modal-close","×");close.type="button";header.append(title,close);dialog.append(header);
+  const form=element("form","salary-output-form");form.append(element("h3","salary-output-step","1. 어떤 원장을 출력할까요?"));const target=element("select","text-input");const all=element("option","","전체 원장");all.value="";target.append(all);statements.forEach(item=>{const option=element("option","",`${item.settlement.teacherName} 원장`);option.value=item.settlement.teacherId||item.settlement.teacherName;target.append(option);});target.value=presetTeacherId;form.append(target,element("h3","salary-output-step","2. 어떤 방식으로 출력할까요?"));
+  const methods=element("div","salary-output-methods");[["print","🖨 종이 인쇄"],["pdf-separate","📄 원장별 개별 PDF"],["pdf-merged","📑 하나의 PDF로 병합"],["image","🖼 페이지별 개별 PNG 이미지"]].forEach(([value,label],index)=>{const row=element("label","salary-output-method");const radio=element("input");radio.type="radio";radio.name="salary-output-method";radio.value=value;radio.checked=index===0;row.append(radio,element("span","",label));methods.append(row);});form.append(methods);
+  const footer=element("footer","modal-footer");const cancel=element("button","secondary-button","취소");cancel.type="button";const run=element("button","salary-action-button","실행하기");run.type="submit";footer.append(cancel,run);form.append(footer);dialog.append(form);backdrop.append(dialog);document.body.append(backdrop);document.body.classList.add("modal-open");const dismiss=()=>{backdrop.remove();document.body.classList.remove("modal-open");};close.addEventListener("click",dismiss);cancel.addEventListener("click",dismiss);
+  form.addEventListener("submit",async event=>{event.preventDefault();const selected=target.value;const chosen=selected?statements.filter(item=>(item.settlement.teacherId||item.settlement.teacherName)===selected):statements;const method=form.querySelector('input[name="salary-output-method"]:checked')?.value||"print";dismiss();await exportSalaryOutput(chosen,month,method,run);});
 }
 
 function createStatisticsTablePanel(titleText, copyText, tableId, columns) {
