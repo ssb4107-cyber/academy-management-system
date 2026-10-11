@@ -102,6 +102,9 @@ const state = {
   diagnosticRuns: [],
   clientErrors: [],
   clientErrorFilter: "OPEN",
+  backupSummary: {},
+  dataBackups: [],
+  backupPreview: null,
 };
 
 const app = document.querySelector("#app");
@@ -4334,6 +4337,19 @@ function createAccessSettingsView() {
   diagnosticsPanel.append(diagnosticsHead, diagnosticsSummary, latest, issues, runHistory);
   view.append(diagnosticsPanel);
 
+  const backupPanel = element("section", "student-panel data-backup-panel");
+  const backupHead = element("div", "toolbar operational-settings-head");
+  const backupTitle = element("div");
+  backupTitle.append(element("strong", "settings-panel-title", "검증 백업 및 외부 보관"),
+    element("p", "settings-panel-copy", "자정에 백업 주기를 확인하며, 같은 내용은 한 번만 저장합니다. 검증된 JSON은 PC에도 보관할 수 있습니다."));
+  const createBackup = element("button", "settings-action-button", "지금 백업");
+  createBackup.type="button";createBackup.addEventListener("click",()=>createVerifiedBackup(createBackup));
+  backupHead.append(backupTitle,createBackup);
+  const backupSummary = element("div","backup-summary-grid");backupSummary.id="backup-summary-grid";
+  const backupList = element("div","data-backup-list");backupList.id="data-backup-list";
+  const backupPreview = element("div","backup-preview-box");backupPreview.id="backup-preview-box";
+  backupPanel.append(backupHead,backupSummary,backupPreview,backupList);view.append(backupPanel);
+
   const errorPanel = element("section", "student-panel client-error-panel");
   const errorHead = element("div", "toolbar operational-settings-head");
   const errorTitle = element("div");
@@ -4379,12 +4395,14 @@ function createAccessSettingsView() {
 }
 
 async function loadAccessSettingsWorkspace() {
-  const [{ data, error }, { data: operations, error: operationsError }] = await Promise.all([
+  const [{ data, error }, { data: operations, error: operationsError }, { data: backups, error: backupsError }] = await Promise.all([
     supabase.rpc("get_access_settings_workspace"),
     supabase.rpc("get_operations_diagnostics_workspace"),
+    supabase.rpc("get_data_backup_workspace"),
   ]);
   if (error) { showNotice(normalizeError(error), "error");return false; }
   if (operationsError) { showNotice(normalizeError(operationsError, "운영 진단 조회"), "error");return false; }
+  if (backupsError) { showNotice(normalizeError(backupsError, "검증 백업 조회"), "error");return false; }
   state.accessUsers = Array.isArray(data?.users) ? data.users : [];
   state.accessTeachers = Array.isArray(data?.teachers) ? data.teachers : [];
   state.accessPermissions = Array.isArray(data?.managerPermissions) ? data.managerPermissions : [];
@@ -4396,6 +4414,8 @@ async function loadAccessSettingsWorkspace() {
   state.latestDiagnosticRun = operations?.latestRun || null;
   state.diagnosticRuns = Array.isArray(operations?.recentRuns) ? operations.recentRuns : [];
   state.clientErrors = Array.isArray(operations?.errors) ? operations.errors : [];
+  state.backupSummary = backups?.summary || {};
+  state.dataBackups = Array.isArray(backups?.backups) ? backups.backups : [];
   state.accessSettingsReady = true;
   renderAccessSettingsWorkspace();
   return true;
@@ -4472,10 +4492,72 @@ function renderAccessSettingsWorkspace() {
     const row=element("article","settings-audit-row");const copy=element("div");copy.append(element("strong","",labels[revision.action]||revision.action),element("p","settings-audit-memo",revision.memo||revision.targetId||""));row.append(copy,element("span","settings-audit-meta",`${revision.createdAt||""} · ${revision.actorEmail||""}`));audit.append(row);
   });}
   renderOperationsDiagnostics();
+  renderDataBackups();
 }
 
 function operationsStatusText(status) {
   return { HEALTHY:"정상", WARNING:"확인 필요", CRITICAL:"조치 필요" }[status] || "진단 전";
+}
+
+function formatBytes(value) {
+  const bytes=Number(value||0);if(bytes<1024)return `${bytes.toLocaleString("ko-KR")} B`;
+  if(bytes<1024*1024)return `${(bytes/1024).toFixed(1)} KB`;
+  return `${(bytes/1024/1024).toFixed(2)} MB`;
+}
+
+function renderDataBackups() {
+  const summary=state.backupSummary||{};const summaryGrid=document.querySelector("#backup-summary-grid");
+  if(summaryGrid){summaryGrid.replaceChildren();[
+    ["백업 기록",`${Number(summary.backupCount||0).toLocaleString("ko-KR")}개`],
+    ["고유 저장본",`${Number(summary.uniqueContentCount||0).toLocaleString("ko-KR")}개`],
+    ["백업 사용량",formatBytes(summary.storedPayloadBytes)],
+    ["전체 DB 크기",formatBytes(summary.databaseBytes)],
+  ].forEach(([label,value])=>{const card=element("article","operations-summary-card");card.append(element("span","",label),element("strong","",value));summaryGrid.append(card);});}
+  const previewBox=document.querySelector("#backup-preview-box");
+  if(previewBox){previewBox.replaceChildren();const preview=state.backupPreview;if(preview){
+    previewBox.append(element("strong","",preview.matchesCurrent?"현재 데이터와 동일한 백업입니다.":`복구 시 달라지는 영역 ${Number(preview.changedTables||0)}개`));
+    const changed=(Array.isArray(preview.tables)?preview.tables:[]).filter((item)=>item.changed);
+    if(changed.length){const grid=element("div","backup-impact-grid");changed.forEach((item)=>{const row=element("div","backup-impact-row");row.append(element("code","",item.table),element("span","",`현재 ${Number(item.currentRows||0).toLocaleString("ko-KR")}행 → 백업 ${Number(item.backupRows||0).toLocaleString("ko-KR")}행`));grid.append(row);});previewBox.append(grid);}
+    previewBox.append(element("p","backup-preview-note","이 미리보기는 데이터 변경 없이 비교만 수행했습니다. 실제 복구 기능은 별도 안전 단계에서 연결됩니다."));
+  }}
+  const list=document.querySelector("#data-backup-list");if(!list)return;list.replaceChildren();
+  if(!state.dataBackups.length){list.append(element("p","settings-audit-empty","아직 생성된 Supabase 검증 백업이 없습니다."));return;}
+  state.dataBackups.forEach((backup)=>{
+    const row=element("article","data-backup-row");const copy=element("div");
+    const type={MANUAL:"수동",AUTOMATIC:"자정 자동",PRE_RESTORE:"복구 전"}[backup.type]||backup.type;
+    copy.append(element("strong","",backup.label||"검증 백업"),
+      element("p","settings-audit-memo",`${type} · ${backup.createdAt||"-"} · ${formatBytes(backup.payloadBytes)} · ${Number(backup.manifest?.rowCount||0).toLocaleString("ko-KR")}행`),
+      element("code","backup-checksum",backup.checksum||"-"));
+    const actions=element("div","data-backup-actions");
+    const verify=element("button","table-action-button","다시 검증");verify.type="button";verify.addEventListener("click",()=>verifyDataBackup(backup,verify));
+    const preview=element("button","table-action-button","복구 영향");preview.type="button";preview.addEventListener("click",()=>previewDataBackup(backup,preview));
+    const download=element("button","table-action-button","JSON 저장");download.type="button";download.addEventListener("click",()=>downloadDataBackup(backup,download));
+    actions.append(verify,preview,download);row.append(copy,actions);list.append(row);
+  });
+}
+
+async function createVerifiedBackup(button) {
+  const label=window.prompt("백업 이름을 입력하세요.",`수동 백업 ${new Date().toLocaleDateString("ko-KR")}`);if(label===null)return;
+  button.disabled=true;const original=button.textContent;button.textContent="백업 중…";
+  const{data,error}=await supabase.rpc("create_verified_data_backup",{p_label:label.trim()||"수동 백업",p_backup_type:"MANUAL",p_request_id:crypto.randomUUID()});
+  button.disabled=false;button.textContent=original;if(error){showNotice(normalizeError(error,"검증 백업 생성"),"error");return;}
+  showNotice(`검증 백업을 만들었습니다. ${formatBytes(data?.payloadBytes)}${data?.newStoredContent?" 저장":" · 같은 내용 재사용"}`,"success");state.backupPreview=null;await loadAccessSettingsWorkspace();
+}
+
+async function verifyDataBackup(backup,button) {
+  button.disabled=true;button.textContent="검증 중…";const{data,error}=await supabase.rpc("verify_data_backup",{p_backup_id:backup.backupId});button.disabled=false;button.textContent="다시 검증";
+  if(error){showNotice(normalizeError(error,"백업 무결성 검증"),"error");return;}showNotice(data?.valid?"백업 내용과 행 구성이 정상입니다.":"백업 검증에 실패했습니다.",data?.valid?"success":"error");await loadAccessSettingsWorkspace();
+}
+
+async function previewDataBackup(backup,button) {
+  button.disabled=true;button.textContent="비교 중…";const{data,error}=await supabase.rpc("preview_data_backup_restore",{p_backup_id:backup.backupId});button.disabled=false;button.textContent="복구 영향";
+  if(error){showNotice(normalizeError(error,"백업 복구 영향 비교"),"error");return;}state.backupPreview=data||null;renderDataBackups();document.querySelector("#backup-preview-box")?.scrollIntoView({behavior:"smooth",block:"center"});
+}
+
+async function downloadDataBackup(backup,button) {
+  button.disabled=true;button.textContent="준비 중…";const{data,error}=await supabase.rpc("download_data_backup",{p_backup_id:backup.backupId});button.disabled=false;button.textContent="JSON 저장";
+  if(error){showNotice(normalizeError(error,"백업 JSON 저장"),"error");return;}
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json;charset=utf-8"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=`academy-backup-${String(backup.createdAt||"").slice(0,10)||"latest"}-${String(backup.backupId).slice(0,8)}.json`;document.body.append(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);showNotice("검증 백업 JSON 저장을 시작했습니다.","success");
 }
 
 function renderOperationsDiagnostics() {

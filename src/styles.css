@@ -365,6 +365,17 @@ button:disabled { cursor: wait; opacity: 0.65; }
 .client-error-meta { margin: 0; color: #8a93a2; font-size: 10px; word-break: break-all; }
 .client-error-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .resolve-error-button { color: #146b42; border-color: #9fd6b8; background: #effaf3; }
+.backup-summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; padding: 18px 20px; border-bottom: 1px solid #edf0f4; }
+.data-backup-list { display: grid; }
+.data-backup-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 18px; padding: 15px 18px; border-top: 1px solid #edf0f4; }
+.data-backup-row:first-child { border-top: 0; }
+.data-backup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.backup-checksum { display: inline-block; max-width: 270px; margin-top: 6px; overflow: hidden; color: #7d8796; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.backup-preview-box { display: grid; gap: 10px; margin: 16px 20px 0; padding: 15px; border: 1px solid #b9d6f2; border-radius: 11px; color: #284c73; background: #f2f8ff; }
+.backup-preview-box:empty { display: none; }
+.backup-impact-grid { display: grid; gap: 6px; }
+.backup-impact-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 9px; border-radius: 7px; background: #fff; font-size: 11px; }
+.backup-preview-note { margin: 0; color: #6d7890; font-size: 11px; }
 .salary-batch-form { display: grid; grid-template-columns: 0.85fr 0.85fr 1.5fr auto; align-items: end; gap: 14px; padding: 20px; }
 .salary-filter-toolbar { align-items: center; }
 .salary-filter-toolbar .search-wrap { min-width: 230px; }
@@ -540,6 +551,10 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .diagnostic-history-row .diagnostic-code { grid-column: 1 / -1; }
   .error-recovery-box { grid-template-columns: 1fr; padding: 16px; }
   .error-recovery-advice { grid-column: auto; }
+  .backup-summary-grid { grid-template-columns: 1fr 1fr; padding: 16px; }
+  .data-backup-row { grid-template-columns: 1fr; }
+  .data-backup-actions { justify-content: flex-start; }
+  .backup-preview-box { margin: 14px 16px 0; }
   .vacation-period-item { grid-template-columns: 1fr; }
   .vacation-period-actions { justify-content: flex-start; }
   .sibling-group-list { grid-template-columns: 1fr; }
@@ -576,6 +591,8 @@ button:disabled { cursor: wait; opacity: 0.65; }
   .salary-kpis, .salary-ledger-summary { grid-template-columns: 1fr; }
   .salary-calculation-controls,.salary-preview-summary,.salary-exclusion-list,.salary-adjustment-form { grid-template-columns: 1fr; }
   .operations-summary-grid, .access-permission-grid { grid-template-columns: 1fr; }
+  .backup-summary-grid { grid-template-columns: 1fr; }
+  .backup-impact-row { align-items: flex-start; flex-direction: column; }
 }
 
 @media print {
